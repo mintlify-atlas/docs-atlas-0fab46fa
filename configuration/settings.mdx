@@ -133,6 +133,10 @@ private static void ResetAllTrackers()
 }
 ```
 
+<Note>
+`ResetAllTrackers()` does NOT reset `MoaiTracker`. However, `OverlayManager.SafeCleanup()` resets all trackers including Moai.
+</Note>
+
 Each tracker's Reset method zeroes all counters:
 
 ```csharp
