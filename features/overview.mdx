@@ -1,0 +1,74 @@
+---
+title: Features overview
+description: Comprehensive tracking system for MegaBonk game objects including chests, shrines, ShadyGuys, and Moai shrines
+---
+
+SpawnTracker provides real-time tracking of spawned game objects in MegaBonk. The mod uses Harmony patches to intercept spawn and interaction events, maintaining accurate counts throughout each round.
+
+## Available tracking features
+
+<CardGroup cols={2}>
+  <Card title="Chest tracking" icon="treasure-chest" href="/features/chest-tracking">
+    Track total chests spawned and how many remain unopened
+  </Card>
+  
+  <Card title="Shrine tracking" icon="church" href="/features/shrine-tracking">
+    Monitor charge shrines including active count and completion status
+  </Card>
+  
+  <Card title="ShadyGuy tracking" icon="user-secret" href="/features/shadyguy-tracking">
+    Count ShadyGuy spawns, interactions, and disappearances
+  </Card>
+  
+  <Card title="Moai tracking" icon="head-side" href="/features/moai-tracking">
+    Track Moai shrine spawns and player interactions
+  </Card>
+</CardGroup>
+
+<Card title="Overlay display" icon="display" href="/features/overlay-display">
+  Real-time IMGUI overlay showing all tracking statistics in the bottom-left corner
+</Card>
+
+## How tracking works
+
+All tracking features work together through a centralized system:
+
+- **Harmony patches** intercept game methods when objects spawn or are interacted with
+- **Static tracker classes** maintain counts for each object type
+- **Overlay manager** coordinates the GUI display and tracker resets
+- **Round lifecycle hooks** enable tracking at round start and reset on death/end
+
+<Note>
+  Tracking is automatically enabled when a round starts and disabled when the player dies or the round ends.
+</Note>
+
+## Tracker synchronization
+
+All trackers are reset simultaneously at key moments:
+
+```csharp
+private static void ResetAllTrackers()
+{
+    ChestTracker.Reset();
+    ShadyGuyTracker.Reset();
+    ChargeShrineTracker.Reset();
+}
+```
+
+This ensures accurate counts for each new round without carryover from previous sessions.
+
+## Round state management
+
+The mod monitors round state through the `disableTracker` flag and `IsRoundActive` status:
+
+```csharp
+public static bool disableTracker; // disables tracking outside of rounds
+```
+
+When enabled, all patches check this flag before updating counts:
+
+```csharp
+if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) return;
+```
+
+This prevents tracking during menus, loading screens, or between rounds.

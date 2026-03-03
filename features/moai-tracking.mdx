@@ -1,0 +1,155 @@
+---
+title: Moai tracking
+description: Track Moai shrine spawns and player interactions
+---
+
+The Moai tracking system monitors Moai shrines throughout each level, counting both spawns and successful interactions.
+
+## MoaiTracker class
+
+The tracker maintains two counters:
+
+```csharp
+public static class MoaiTracker
+{
+    public static int total = 0;
+    public static int interacted = 0;
+
+    public static void Reset()
+    {
+        total = 0;
+        interacted = 0;
+    }
+}
+```
+
+<Info>
+  Unlike other trackers, Moai tracking only needs spawn and interaction counts since Moai shrines don't disappear or have completion states.
+</Info>
+
+## Tracking Moai spawns
+
+Moai shrines are spawned through the `SpawnInteractables.SpawnShrines` method:
+
+```csharp
+[HarmonyPatch]
+public static class MoaiSpawnPatch
+{
+    private static System.Reflection.MethodBase TargetMethod()
+    {
+        // The Moai shrines are usually spawned by SpawnInteractables.SpawnShrines
+        // If you want to count them individually, this hook will cover all spawn events.
+        return AccessTools.Method(typeof(SpawnInteractables), "SpawnShrines");
+    }
+
+    private static void Postfix()
+    {
+        if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive)
+            return;
+
+        MoaiTracker.total++;
+        Plugin.log.LogInfo($"[Moai] Spawned a Moai Shrine! (Total: {MoaiTracker.total})");
+    }
+}
+```
+
+### Implementation notes
+
+<Accordion title="Manual method targeting">
+  The patch uses `TargetMethod()` to dynamically locate `SpawnInteractables.SpawnShrines` at runtime, providing flexibility for different game versions.
+</Accordion>
+
+<Accordion title="Shrine spawn timing">
+  `SpawnShrines` is called during level generation, so the counter increments as soon as Moai shrines are placed in the level.
+</Accordion>
+
+## Tracking Moai interactions
+
+When a player interacts with a Moai shrine, the interaction counter increments:
+
+```csharp
+[HarmonyPatch(typeof(InteractableShrineMoai))]
+public static class MoaiPatches
+{
+    // Patch Interact() to listen when a player uses the Moai Shrine
+    [HarmonyPostfix]
+    [HarmonyPatch(nameof(InteractableShrineMoai.Interact))]
+    public static void Postfix_Interact(InteractableShrineMoai __instance, ref bool __result)
+    {
+        // Only count if the shrine was actually interacted with successfully
+        if ((Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) || !__result)
+            return;
+
+        MoaiTracker.interacted++;
+        Plugin.log.LogInfo($"[Moai] Interacted with Moai Shrine! ({MoaiTracker.interacted}/{MoaiTracker.total})");
+    }
+}
+```
+
+<Note>
+  The patch checks `__result` to ensure only successful interactions are counted, filtering out failed attempts or invalid interaction states.
+</Note>
+
+### Return value validation
+
+<Accordion title="Why check __result?">
+  The `Interact()` method returns `bool` indicating whether the interaction succeeded. By checking `!__result`, the patch skips false positives from interactions that didn't actually trigger the Moai shrine effect.
+</Accordion>
+
+<Accordion title="Round state verification">
+  Like all tracking patches, this verifies `Plugin.disableTracker` and `ChargeShrineTracker.IsRoundActive` to prevent counting interactions outside of active rounds.
+</Accordion>
+
+## Usage example
+
+During a typical level:
+
+1. Level generates with 2 Moai shrines
+2. `total` = 2, `interacted` = 0
+3. Player interacts with first Moai shrine
+4. `total` = 2, `interacted` = 1
+5. Player interacts with second Moai shrine
+6. `total` = 2, `interacted` = 2
+
+The overlay displays: `Moai: 2/2`
+
+## Overlay display
+
+The Moai tracker is shown on the fourth line of the overlay:
+
+```csharp
+DrawShadowedLabel(new Rect(10, 80, 230, 25), $"Moai: {MoaiTracker.interacted}/{MoaiTracker.total}");
+```
+
+This shows how many Moai shrines the player has interacted with out of the total spawned.
+
+## Reset behavior
+
+Moai counters are reset alongside other trackers:
+
+```csharp
+public static void SafeCleanup()
+{
+    try
+    {
+        HideOverlay();
+
+        ChestTracker.Reset();
+        ShadyGuyTracker.Reset();
+        ChargeShrineTracker.Reset();
+        MoaiTracker.Reset();
+
+        Plugin.disableTracker = true;
+        ChargeShrineTracker.IsRoundActive = false;
+        GameManagerPatches.roundStarted = false;
+
+        Plugin.log.LogInfo("[OverlayManager] All trackers reset and overlay hidden.");
+    }
+    catch (System.Exception ex)
+    {
+        Plugin.log.LogError($"[OverlayManager] SafeCleanup failed: {ex}");
+    }
+}
+```
+
+This ensures fresh counts for each new round and prevents carryover between sessions.

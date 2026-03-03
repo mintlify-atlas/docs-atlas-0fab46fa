@@ -1,0 +1,246 @@
+---
+title: Overlay display
+description: Real-time IMGUI overlay showing tracking statistics in the bottom-left corner of the screen
+---
+
+The overlay display provides real-time visual feedback for all tracked game objects using Unity's IMGUI system.
+
+## ChestOverlay component
+
+The overlay is implemented as a MonoBehaviour component that renders UI using Unity's immediate mode GUI:
+
+```csharp
+public class ChestOverlay : MonoBehaviour
+{
+    private GUIStyle textStyle;
+    private GUIStyle boxStyle;
+    private Rect boxRect;
+    private Texture2D bgTex;
+    private bool stylesReady = false;
+```
+
+<Info>
+  The component persists across scenes using `DontDestroyOnLoad`, ensuring the overlay remains visible throughout the entire run.
+</Info>
+
+## GUI rendering
+
+The `OnGUI()` method is called every frame to render the overlay:
+
+```csharp
+void OnGUI()
+{
+    if (!stylesReady)
+    {
+        SetupStyles();
+        stylesReady = true;
+    }
+
+    GUI.BeginGroup(boxRect, GUIContent.none, boxStyle);
+    try
+    {
+        DrawShadowedLabel(new Rect(10, 8, 230, 25), $"Chests: {ChestTracker.unopenedChests}/{ChestTracker.totalChests}");
+        DrawShadowedLabel(new Rect(10, 32, 230, 25), $"ShadyGuys: {ShadyGuyTracker.disappeared}/{ShadyGuyTracker.total}");
+        DrawShadowedLabel(new Rect(10, 56, 230, 25), $"Shrines: {ChargeShrineTracker.ActiveShrineCount}/{ChargeShrineTracker.total}");
+        DrawShadowedLabel(new Rect(10, 80, 230, 25), $"Moai: {MoaiTracker.interacted}/{MoaiTracker.total}");
+
+        if (ChestTracker.totalChests == 0 && ShadyGuyTracker.total == 0 && ChargeShrineTracker.ActiveShrineCount == 0)
+            DrawShadowedLabel(new Rect(10, 80, 230, 25), "Waiting for spawns...");
+    }
+    finally
+    {
+        GUI.EndGroup();
+    }
+}
+```
+
+### Rendering details
+
+<Accordion title="Style initialization">
+  Styles are set up once on the first `OnGUI()` call using the `stylesReady` flag. This prevents redundant style creation every frame.
+</Accordion>
+
+<Accordion title="GUI group structure">
+  `GUI.BeginGroup()` creates a container for all overlay elements, making it easier to position and style them as a cohesive unit.
+</Accordion>
+
+<Accordion title="Waiting state">
+  When no objects have spawned yet, the overlay displays "Waiting for spawns..." to indicate it's active but waiting for tracking data.
+</Accordion>
+
+## Overlay positioning
+
+The overlay is positioned in the bottom-left corner of the screen:
+
+```csharp
+private void SetupStyles()
+{
+    // Text style
+    textStyle = new GUIStyle(GUI.skin.label)
+    {
+        fontSize = 20,
+        fontStyle = FontStyle.Bold,
+        alignment = TextAnchor.UpperLeft
+    };
+    textStyle.normal.textColor = Color.white;
+
+    // Background box (semi-transparent black)
+    bgTex = new Texture2D(1, 1);
+    bgTex.SetPixel(0, 0, new Color(0, 0, 0, 0.5f));
+    bgTex.Apply();
+
+    boxStyle = new GUIStyle(GUI.skin.box);
+    boxStyle.normal.background = bgTex;
+    boxStyle.border = new RectOffset();
+    boxStyle.border.left = 6;
+    boxStyle.border.right = 6;
+    boxStyle.border.top = 6;
+    boxStyle.border.bottom = 6;
+
+    // Position bottom-left
+    boxRect = new Rect(10, Screen.height * 0.8f, 250, 130);
+}
+```
+
+<Note>
+  The overlay is positioned at 80% down the screen (`Screen.height * 0.8f`), placing it in the bottom-left while leaving room for other UI elements.
+</Note>
+
+## Displayed information
+
+The overlay shows four tracking statistics:
+
+| Line | Display | Data Source |
+|------|---------|-------------|
+| 1 | `Chests: 2/5` | `ChestTracker.unopenedChests` / `ChestTracker.totalChests` |
+| 2 | `ShadyGuys: 1/3` | `ShadyGuyTracker.disappeared` / `ShadyGuyTracker.total` |
+| 3 | `Shrines: 2/4` | `ChargeShrineTracker.ActiveShrineCount` / `ChargeShrineTracker.total` |
+| 4 | `Moai: 1/2` | `MoaiTracker.interacted` / `MoaiTracker.total` |
+
+## Text rendering with shadows
+
+The overlay uses shadowed text for better visibility:
+
+```csharp
+private void DrawShadowedLabel(Rect position, string text)
+{
+    if (textStyle == null) return;
+
+    // Shadow
+    Color originalColor = textStyle.normal.textColor;
+    textStyle.normal.textColor = Color.black;
+    GUI.Label(new Rect(position.x + 2, position.y + 2, position.width, position.height), text, textStyle);
+
+    // Main text
+    textStyle.normal.textColor = originalColor;
+    GUI.Label(position, text, textStyle);
+}
+```
+
+<Accordion title="Shadow offset">
+  The shadow is rendered 2 pixels right and 2 pixels down from the main text, creating a subtle depth effect that improves readability over any background.
+</Accordion>
+
+## OverlayManager functions
+
+The `OverlayManager` class handles overlay lifecycle:
+
+```csharp
+public static class OverlayManager
+{
+    public static GameObject overlayObject;
+
+    public static void CreateOverlay()
+    {
+        if (overlayObject != null)
+        {
+            overlayObject.SetActive(true); // Show if hidden
+            return;
+        }
+
+        ClassInjector.RegisterTypeInIl2Cpp<ChestOverlay>();
+        overlayObject = new GameObject("ChestOverlay");
+        UnityEngine.Object.DontDestroyOnLoad(overlayObject);
+        overlayObject.AddComponent<ChestOverlay>();
+        Plugin.log.LogInfo("[OverlayManager] Created overlay GUI");
+    }
+```
+
+### Manager functions
+
+<Accordion title="CreateOverlay()">
+  Creates the overlay GameObject and registers the ChestOverlay component with IL2CPP. If the overlay already exists, it simply reactivates it instead of creating a duplicate.
+</Accordion>
+
+<Accordion title="HideOverlay()">
+  ```csharp
+  public static void HideOverlay()
+  {
+      if (overlayObject != null)
+      {
+          overlayObject.SetActive(false);
+          Plugin.log.LogInfo("[OverlayManager] Overlay hidden.");
+      }
+  }
+  ```
+  Hides the overlay without destroying it, allowing it to be shown again later without recreation.
+</Accordion>
+
+<Accordion title="DestroyOverlay()">
+  ```csharp
+  public static void DestroyOverlay()
+  {
+      if (overlayObject != null)
+      {
+          UnityEngine.Object.DestroyImmediate(overlayObject);
+          overlayObject = null;
+      }
+  }
+  ```
+  Permanently destroys the overlay GameObject and clears the reference.
+</Accordion>
+
+<Accordion title="SafeCleanup()">
+  ```csharp
+  public static void SafeCleanup()
+  {
+      try
+      {
+          HideOverlay();
+          ChestTracker.Reset();
+          ShadyGuyTracker.Reset();
+          ChargeShrineTracker.Reset();
+          MoaiTracker.Reset();
+          Plugin.disableTracker = true;
+          ChargeShrineTracker.IsRoundActive = false;
+          GameManagerPatches.roundStarted = false;
+          Plugin.log.LogInfo("[OverlayManager] All trackers reset and overlay hidden.");
+      }
+      catch (System.Exception ex)
+      {
+          Plugin.log.LogError($"[OverlayManager] SafeCleanup failed: {ex}");
+      }
+  }
+  ```
+  Safely hides the overlay and resets all trackers, called when rounds end or the game manager is destroyed.
+</Accordion>
+
+## Lifecycle hooks
+
+The overlay component handles cleanup automatically:
+
+```csharp
+private void OnDisable()
+{
+    OverlayManager.SafeCleanup();
+}
+
+private void OnDestroy()
+{
+    OverlayManager.SafeCleanup();
+}
+```
+
+<Note>
+  Both `OnDisable()` and `OnDestroy()` call `SafeCleanup()` to ensure trackers are reset and the overlay is properly hidden regardless of how the component is disabled.
+</Note>

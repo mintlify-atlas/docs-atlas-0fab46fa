@@ -1,0 +1,326 @@
+---
+title: Troubleshooting
+description: Solutions to common SpawnTracker issues and debugging tips
+---
+
+Resolve common problems with SpawnTracker installation, overlay visibility, and counter accuracy.
+
+## Common issues
+
+<AccordionGroup>
+  <Accordion title="Overlay not appearing in game">
+    **Symptoms:**
+    - No counter display visible during gameplay
+    - Mod loads successfully but UI is missing
+
+    **Solutions:**
+
+    1. **Check if the overlay was created:**
+       Look for this log message in BepInEx console:
+       ```
+       [Info   : SpawnLogger] Chest overlay GUI spawned.
+       ```
+       or
+       ```
+       [Info   : SpawnLogger] [OverlayManager] Created overlay GUI
+       ```
+
+    2. **Verify chests have spawned:**
+       The overlay only appears after `SpawnChests` is called. If no chests spawn, the overlay won't initialize.
+
+    3. **Check overlay state:**
+       The overlay may be hidden instead of destroyed. Look for:
+       ```
+       [Info   : SpawnLogger] [OverlayManager] Overlay hidden.
+       ```
+
+    4. **Screen resolution issues:**
+       The overlay position is calculated as:
+       ```csharp
+       boxRect = new Rect(10, Screen.height * 0.8f, 250, 130);
+       ```
+       On very low resolutions, it may be off-screen.
+
+    5. **Force overlay recreation:**
+       Start a new run. The overlay is created with `DontDestroyOnLoad`, so it should persist between scenes.
+  </Accordion>
+
+  <Accordion title="Counters not updating">
+    **Symptoms:**
+    - Overlay visible but shows 0/0 for all items
+    - Counters frozen at specific values
+    - "Waiting for spawns..." message persists
+
+    **Causes and fixes:**
+
+    **1. Tracking is disabled:**
+    Check if tracking is active. Look for these log messages:
+    ```
+    [Info   : SpawnLogger] Round started via StartPlaying: Tracking enabled.
+    ```
+    or
+    ```
+    [Info   : SpawnLogger] Player died: Tracking paused and counters reset.
+    ```
+
+    If you see the "paused" message, tracking is disabled. This is intentional when:
+    - You're in a menu
+    - The player has died
+    - Between rounds
+
+    **2. Harmony patches not applied:**
+    Verify Harmony patching succeeded on load:
+    ```
+    [Info   : SpawnLogger] Loading SpawnLogger v0.5.3 by Antiparty
+    [Info   : SpawnLogger] SpawnLogger loaded successfully!
+    ```
+
+    **3. Game events not firing:**
+    Some custom game modes or level types may not trigger the standard spawn methods. Check logs for:
+    ```
+    [Info   : SpawnLogger] Chests spawned: [number]
+    [Info   : SpawnLogger] [ShadyGuy] Spawned new ShadyGuy (Total: [number])
+    [Info   : SpawnLogger] [ShrineTracker] A Charge Shrine was counted! Total Shrines: [number]
+    ```
+
+    **4. Counters were reset:**
+    Counters reset on death or stage transitions. This is expected behavior.
+  </Accordion>
+
+  <Accordion title="Mod conflicts with other BepInEx mods">
+    **Symptoms:**
+    - Game crashes on startup
+    - SpawnTracker doesn't load
+    - Other mods stop working
+
+    **Diagnosis:**
+
+    1. **Check load order:**
+       SpawnTracker uses Harmony patches. If another mod patches the same methods, conflicts may occur.
+
+    2. **Look for IL2CPP registration errors:**
+       SpawnTracker registers `ChestOverlay` with IL2CPP:
+       ```csharp
+       ClassInjector.RegisterTypeInIl2Cpp<ChestOverlay>();
+       ```
+       If another mod already registered a type with the same name, this will fail.
+
+    3. **Check BepInEx logs:**
+       Look for error messages containing:
+       - `SpawnLogger`
+       - `ChestOverlay`
+       - `Antiparty_SpawnLogger`
+
+    4. **Test in isolation:**
+       Temporarily disable other mods and enable only SpawnTracker to confirm the conflict.
+
+    <Warning>
+    If multiple mods patch `GameManager.OnDied`, the execution order matters. SpawnTracker resets counters and disables tracking in this patch.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="Chest counter shows wrong values">
+    **Common scenarios:**
+
+    **Unopened count negative or incorrect:**
+    The counter uses:
+    ```csharp
+    ChestTracker.unopenedChests = Mathf.Max(0, ChestTracker.unopenedChests - 1);
+    ```
+
+    This prevents negative values, but if `OnChestOpened` fires more times than chests exist, it will clamp to 0.
+
+    **Check logs for:**
+    ```
+    [Info   : SpawnLogger] [ChestTracker] Chest opened! Remaining unopened: [number]
+    ```
+
+    **Total count wrong:**
+    Total is set when `SpawnChests` is called:
+    ```csharp
+    ChestTracker.totalChests += __instance.numChests;
+    ChestTracker.unopenedChests += __instance.numChests;
+    ```
+
+    If this method is called multiple times per level, totals will accumulate. Look for:
+    ```
+    [Info   : SpawnLogger] Chests spawned: [number]
+    ```
+  </Accordion>
+
+  <Accordion title="Shady Guy counter doesn't match actual spawns">
+    **Tracking logic:**
+
+    SpawnTracker counts Shady Guys in three states:
+    - `total` - spawned via `Start()`
+    - `interacted` - player interacted successfully
+    - `disappeared` - Shady Guy despawned
+
+    **Check logs:**
+    ```
+    [Info   : SpawnLogger] [ShadyGuy] Spawned new ShadyGuy (Total: [number])
+    [Info   : SpawnLogger] [ShadyGuy] Interacted with ShadyGuy! ([interacted]/[total])
+    [Info   : SpawnLogger] [ShadyGuy] A ShadyGuy disappeared (Rarity: [rarity])
+    ```
+
+    **The overlay shows:**
+    ```csharp
+    $"ShadyGuys: {ShadyGuyTracker.disappeared}/{ShadyGuyTracker.total}"
+    ```
+
+    This displays **disappeared** count, not interacted count.
+  </Accordion>
+
+  <Accordion title="Overlay persists in menus">
+    **Expected behavior:**
+    The overlay should hide when `SafeCleanup` is called.
+
+    **If it doesn't hide:**
+
+    1. Check if `OnDisable` or `OnDestroy` fired:
+       ```
+       [Info   : SpawnLogger] [OverlayManager] All trackers reset and overlay hidden.
+       ```
+
+    2. The overlay uses `SetActive(false)` instead of destroying:
+       ```csharp
+       overlayObject.SetActive(false); // Just hide, don't destroy
+       ```
+
+    3. If stuck visible, the GameObject may not have received destroy/disable events.
+
+    <Note>
+    The overlay persists with `DontDestroyOnLoad` intentionally to avoid recreation overhead. It should hide, not be destroyed.
+    </Note>
+  </Accordion>
+</AccordionGroup>
+
+## Checking logs
+
+### Accessing BepInEx logs
+
+SpawnTracker writes detailed logs using BepInEx's logging system.
+
+**Log location:**
+```
+BepInEx/LogOutput.log
+```
+
+**Filter for SpawnTracker messages:**
+Search for lines containing:
+- `[SpawnLogger]`
+- `[ChestTracker]`
+- `[ShadyGuy]`
+- `[ShrineTracker]`
+- `[Moai]`
+- `[OverlayManager]`
+
+### Key log messages
+
+**Successful load:**
+```
+[Info   : SpawnLogger] Loading SpawnLogger v0.5.3 by Antiparty
+[Info   : SpawnLogger] SpawnLogger loaded successfully!
+```
+
+**Round lifecycle:**
+```
+[Info   : SpawnLogger] Round started via StartPlaying: Tracking enabled.
+[Info   : SpawnLogger] Player died: Tracking paused and counters reset.
+[Info   : SpawnLogger] GameManager destroyed — hiding overlay and resetting trackers.
+```
+
+**Spawn tracking:**
+```
+[Info   : SpawnLogger] Chests spawned: 5
+[Info   : SpawnLogger] [ShadyGuy] Spawned new ShadyGuy (Total: 2)
+[Info   : SpawnLogger] [ShrineTracker] A Charge Shrine was counted! Total Shrines: 3
+[Info   : SpawnLogger] [Moai] Spawned a Moai Shrine! (Total: 1)
+```
+
+**Interaction tracking:**
+```
+[Info   : SpawnLogger] [ChestTracker] Chest opened! Remaining unopened: 4
+[Info   : SpawnLogger] [ShrineTracker] A Charge Shrine was completed! Remaining: 2
+[Info   : SpawnLogger] [Moai] Interacted with Moai Shrine! (1/1)
+```
+
+### Using logs for debugging
+
+1. **Enable BepInEx console:**
+   Edit `BepInEx/config/BepInEx.cfg`:
+   ```ini
+   [Logging.Console]
+   Enabled = true
+   ```
+
+2. **Check message timestamps:**
+   Verify events occur when expected (during gameplay, not in menus)
+
+3. **Compare counter logs to overlay:**
+   The log values should match what's displayed on-screen
+
+4. **Track reset events:**
+   Confirm counters reset at appropriate times (death, stage transitions)
+
+<Info>
+The mod uses `Plugin.log.LogInfo()` for normal events and `Plugin.log.LogError()` for errors. Check for `[Error]` level messages if experiencing crashes.
+</Info>
+
+## Reset behavior
+
+### When counters reset
+
+All counters reset to zero in these situations:
+
+1. **Player death:**
+   ```
+   [Info   : SpawnLogger] Player died: Tracking paused and counters reset.
+   ```
+
+2. **New round start:**
+   - Via `StartPlaying()`
+   - Via `TryInit()`
+   - Via `CreateInstances()`
+
+3. **Stage transitions:**
+   ```
+   [Info   : SpawnLogger] Stage Start/Next Stage/Restart Stage: Shrines reset, tracking enabled.
+   ```
+
+4. **GameManager destruction:**
+   ```
+   [Info   : SpawnLogger] GameManager destroyed — hiding overlay and resetting trackers.
+   ```
+
+### What gets reset
+
+**ChestTracker:**
+```csharp
+totalChests = 0;
+unopenedChests = 0;
+```
+
+**ShadyGuyTracker:**
+```csharp
+total = 0;
+interacted = 0;
+disappeared = 0;
+```
+
+**ChargeShrineTracker:**
+```csharp
+ActiveShrineCount = 0;
+interacted = 0;
+// total is NOT reset (intentional)
+```
+
+**MoaiTracker:**
+```csharp
+total = 0;
+interacted = 0;
+```
+
+<Warning>
+Counters are **not** saved between game sessions. All values are lost when you exit MegaBonk.
+</Warning>

@@ -1,0 +1,296 @@
+---
+title: Contributing
+description: Learn how to set up a development environment and contribute to SpawnTracker
+---
+
+Contributions to SpawnTracker are welcome! This guide will help you set up your development environment and understand the contribution workflow.
+
+## Development environment setup
+
+### Prerequisites
+
+- **.NET 6.0 SDK** - Required for building the mod
+- **Visual Studio 2022** or **JetBrains Rider** - Recommended IDEs with C# support
+- **MegaBonk** - The game must be installed via Steam
+- **BepInEx IL2CPP** - Mod loader for Unity IL2CPP games
+
+### Required libraries
+
+The project references these assemblies from your MegaBonk installation:
+
+```xml MEGABONK_SIMPLE_MOD.csproj
+<ItemGroup>
+  <Reference Include="Assembly-CSharp" Publicize="true">
+    <HintPath>Libs\Assembly-CSharp.dll</HintPath>
+  </Reference>
+  <Reference Include="0Harmony">
+    <HintPath>Libs\0Harmony.dll</HintPath>
+  </Reference>
+  <Reference Include="BepInEx.Core">
+    <HintPath>Libs\BepInEx.Core.dll</HintPath>
+  </Reference>
+  <Reference Include="BepInEx.Unity.IL2CPP">
+    <HintPath>Libs\BepInEx.Unity.IL2CPP.dll</HintPath>
+  </Reference>
+  <Reference Include="Il2CppInterop.Runtime">
+    <HintPath>Libs\Il2CppInterop.Runtime.dll</HintPath>
+  </Reference>
+</ItemGroup>
+```
+
+All required DLLs should be copied to a `Libs/` directory in your project root.
+
+### Project configuration
+
+The mod targets .NET 6.0 and uses unsafe code for IL2CPP interop:
+
+```xml MEGABONK_SIMPLE_MOD.csproj
+<PropertyGroup>
+  <TargetFramework>net6.0</TargetFramework>
+  <AssemblyName>MEGABONK_SIMPLE_MOD</AssemblyName>
+  <Version>0.1.0</Version>
+  <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  <LangVersion>latest</LangVersion>
+</PropertyGroup>
+```
+
+### Unity assemblies
+
+You'll also need Unity engine assemblies from your MegaBonk installation:
+
+- `UnityEngine.dll`
+- `UnityEngine.CoreModule.dll`
+- `UnityEngine.IMGUIModule.dll` - For GUI rendering
+- `UnityEngine.PhysicsModule.dll`
+- `UnityEngine.UI.dll`
+- `Unity.TextMeshPro.dll`
+
+These are typically located in:
+```
+C:\Program Files (x86)\Steam\steamapps\common\Megabonk\BepInEx\unity-libs\
+C:\Program Files (x86)\Steam\steamapps\common\Megabonk\BepInEx\interop\
+```
+
+## Building the mod
+
+### Via Visual Studio
+
+1. Open `MEGABONK_SIMPLE_MOD.csproj` in Visual Studio
+2. Ensure all assembly references are resolved
+3. Build > Build Solution (or press `Ctrl+Shift+B`)
+4. The compiled DLL will be in `bin/Debug/net6.0/` or `bin/Release/net6.0/`
+
+### Via command line
+
+```bash
+dotnet build MEGABONK_SIMPLE_MOD.csproj -c Release
+```
+
+### Installing your build
+
+Copy the compiled `MEGABONK_SIMPLE_MOD.dll` to:
+```
+C:\Program Files (x86)\Steam\steamapps\common\Megabonk\BepInEx\plugins\
+```
+
+## Testing approach
+
+### Manual testing workflow
+
+1. **Build the mod** with your changes
+2. **Copy DLL** to the BepInEx plugins folder
+3. **Launch MegaBonk** from Steam
+4. **Check BepInEx console** for load confirmation:
+   ```
+   [Info: SpawnLogger] Loading SpawnLogger v0.5.3 by Antiparty
+   [Info: SpawnLogger] SpawnLogger loaded successfully!
+   ```
+5. **Start a game** and verify tracking behavior
+6. **Check logs** in `BepInEx/LogOutput.log` for detailed output
+
+### Debugging techniques
+
+**Use liberal logging:**
+```csharp
+Plugin.log.LogInfo("[YourFeature] Debug info here");
+Plugin.log.LogWarning("[YourFeature] Something unexpected");
+Plugin.log.LogError("[YourFeature] Error occurred");
+```
+
+**Check Harmony patches applied:**
+```csharp
+public override void Load()
+{
+    var harmony = new Harmony(GUID);
+    harmony.PatchAll();
+    
+    // Log all patched methods
+    var patches = Harmony.GetAllPatchedMethods();
+    foreach (var method in patches)
+    {
+        log.LogInfo($"Patched: {method.DeclaringType?.Name}.{method.Name}");
+    }
+}
+```
+
+**Verify tracker values:**
+```csharp
+Plugin.log.LogInfo($"Trackers - Chests: {ChestTracker.totalChests}, ShadyGuys: {ShadyGuyTracker.total}");
+```
+
+### Common testing scenarios
+
+- **Round start**: Verify all trackers reset to 0
+- **Object spawns**: Check counts increment correctly
+- **Interactions**: Verify interaction counts update
+- **Round end**: Confirm tracking disables and overlay cleans up
+- **Scene transitions**: Ensure overlay persists across level changes
+- **Multiple rounds**: Test tracker reset behavior
+
+## Code style
+
+Match the existing code patterns to maintain consistency:
+
+### Naming conventions
+
+```csharp
+// Static tracker classes: PascalCase with "Tracker" suffix
+public static class ChestTracker
+
+// Patch classes: PascalCase with "Patches" or "Patch" suffix  
+public static class SpawnInteractablesPatches
+
+// Public fields: camelCase
+public static int totalChests = 0;
+
+// Private fields: camelCase
+private static bool overlaySpawned = false;
+
+// Methods: PascalCase
+public static void Reset()
+```
+
+### Harmony patch structure
+
+Follow this pattern for consistency:
+
+```csharp
+[HarmonyPatch(typeof(GameClass))]
+public static class GameClassPatches
+{
+    [HarmonyPostfix]
+    [HarmonyPatch(nameof(GameClass.MethodName))]
+    public static void Postfix_MethodName(GameClass __instance)
+    {
+        // Always check tracking flags first
+        if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive)
+            return;
+
+        // Update tracker state
+        YourTracker.count++;
+        
+        // Log the action
+        Plugin.log.LogInfo($"[YourTracker] Event occurred (Count: {YourTracker.count})");
+    }
+}
+```
+
+### Logging format
+
+Use consistent log prefixes:
+
+```csharp
+Plugin.log.LogInfo("[TrackerName] Message here");
+```
+
+Examples from the codebase:
+- `[SpawnLogger]` - General mod events
+- `[ChestTracker]` - Chest-related events
+- `[ShadyGuy]` - ShadyGuy events
+- `[ShrineTracker]` - Shrine events
+- `[OverlayManager]` - Overlay lifecycle
+
+### Comments and documentation
+
+```csharp
+// Section headers
+// --- Static Chest Tracker ---
+
+// Inline comments for complex logic
+ChestTracker.unopenedChests = Mathf.Max(0, ChestTracker.unopenedChests - 1); // Prevent negative
+
+// XML comments for public API (future enhancement)
+/// <summary>
+/// Resets all chest tracking counters to zero.
+/// </summary>
+public static void Reset()
+```
+
+## Submitting improvements
+
+### Before submitting
+
+1. **Test thoroughly** - Verify your changes work across multiple rounds
+2. **Check logs** - Ensure no errors or warnings are introduced
+3. **Follow style** - Match existing code patterns
+4. **Add logging** - Include appropriate log statements for debugging
+5. **Update trackers** - If adding new tracking, update `SafeCleanup()` and overlay display
+
+### Pull request checklist
+
+- [ ] Code builds without errors
+- [ ] Tested in actual game environment
+- [ ] Follows existing code style
+- [ ] Includes logging for new features
+- [ ] Updates overlay UI if adding new trackers
+- [ ] Adds appropriate `Reset()` calls for new trackers
+- [ ] No errors in BepInEx console during testing
+
+### Contribution ideas
+
+Here are some ways to contribute:
+
+**New trackers:**
+- Track additional interactable types
+- Monitor enemy spawns
+- Count item pickups
+
+**Enhanced features:**
+- Configurable overlay position
+- Toggle overlay visibility with hotkey
+- Export tracking data to file
+- Statistical summaries (averages, best runs)
+
+**Code improvements:**
+- Refactor duplicate code patterns
+- Improve error handling
+- Optimize patch performance
+- Add configuration options
+
+**Documentation:**
+- Improve code comments
+- Add usage examples
+- Document undocumented game classes
+
+## GitHub repository
+
+The SpawnTracker source code is hosted on GitHub:
+
+**Repository**: [github.com/Antiparty/SpawnTracker](https://github.com/Antiparty/SpawnTracker) (example URL)
+
+- **Issues**: Report bugs or request features
+- **Pull Requests**: Submit code contributions
+- **Discussions**: Ask questions or share ideas
+
+## Getting help
+
+If you encounter issues while developing:
+
+1. **Check BepInEx logs** - Most issues show up in `LogOutput.log`
+2. **Review Harmony docs** - https://harmony.pardeike.net/
+3. **Inspect game assemblies** - Use dnSpy or ILSpy to examine MegaBonk's code
+4. **Ask in discussions** - The community can help troubleshoot
+
+## License
+
+Ensure your contributions are compatible with the project's license. By submitting a pull request, you agree to license your code under the same terms as the project.

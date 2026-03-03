@@ -1,0 +1,167 @@
+---
+title: Installation
+description: Step-by-step guide to installing SpawnLogger for MegaBonk
+---
+
+## Prerequisites
+
+Before installing SpawnLogger, ensure you have the following:
+
+<CardGroup cols={2}>
+  <Card title="MegaBonk" icon="gamepad">
+    The base game must be installed and working
+  </Card>
+  <Card title="BepInEx 6.x" icon="plug">
+    BepInEx IL2CPP version for Unity games
+  </Card>
+</CardGroup>
+
+<Warning>
+SpawnLogger requires **BepInEx 6.x for IL2CPP** (not the standard Mono version). Make sure you download the correct BepInEx build for Unity IL2CPP games.
+</Warning>
+
+## Installation steps
+
+<Steps>
+  <Step title="Install BepInEx">
+    If you haven't already installed BepInEx:
+    
+    1. Download [BepInEx 6.x IL2CPP](https://github.com/BepInEx/BepInEx/releases) for Unity
+    2. Extract the BepInEx folder to your MegaBonk game directory
+    3. Run the game once to generate BepInEx configuration files
+    4. Close the game after it reaches the main menu
+    
+    <Note>
+    Your MegaBonk directory should contain folders like `BepInEx`, `MegaBonk_Data`, and the game executable after extraction.
+    </Note>
+  </Step>
+
+  <Step title="Download SpawnLogger">
+    Obtain the SpawnLogger DLL file:
+    
+    - Download the latest `SpawnLogger.dll` from the releases page
+    - Or compile from source if you're building it yourself
+    
+    The mod is currently at **version 0.5.3**.
+  </Step>
+
+  <Step title="Install the mod">
+    Copy the mod file to the BepInEx plugins directory:
+    
+    1. Navigate to `<MegaBonk Directory>/BepInEx/plugins/`
+    2. If the `plugins` folder doesn't exist, create it
+    3. Copy `SpawnLogger.dll` into the `plugins` folder
+    
+    Your final path should look like:
+    ```
+    MegaBonk/
+    ├── BepInEx/
+    │   ├── plugins/
+    │   │   └── SpawnLogger.dll  ← mod goes here
+    │   ├── core/
+    │   └── config/
+    └── MegaBonk.exe
+    ```
+  </Step>
+
+  <Step title="Launch the game">
+    Start MegaBonk normally through Steam or your game launcher.
+    
+    BepInEx will automatically:
+    - Load when the game starts
+    - Initialize SpawnLogger
+    - Apply Harmony patches to the game
+  </Step>
+</Steps>
+
+## Verify installation
+
+To confirm SpawnLogger is working correctly:
+
+<Steps>
+  <Step title="Check the BepInEx console">
+    When the game launches, a console window should appear (if you haven't disabled it). Look for these messages:
+    
+    ```
+    [Info   : BepInEx] Loading [SpawnLogger 0.5.3]
+    [Info   : SpawnLogger] Loading SpawnLogger v0.5.3 by Antiparty
+    [Info   : SpawnLogger] SpawnLogger loaded successfully!
+    ```
+    
+    <Note>
+    The console window can be disabled in BepInEx settings, so don't worry if you don't see it. Check the log file instead.
+    </Note>
+  </Step>
+
+  <Step title="Check the log file">
+    If the console isn't visible, check the log file:
+    
+    1. Navigate to `<MegaBonk Directory>/BepInEx/LogOutput.log`
+    2. Open the file in a text editor
+    3. Search for "SpawnLogger" to find the initialization messages
+    
+    You should see the loading confirmation and successful patch application.
+  </Step>
+
+  <Step title="Start a game round">
+    The ultimate verification is seeing the overlay in action:
+    
+    1. Start a new game or continue an existing save
+    2. Begin a round and wait for objects to spawn
+    3. Look for the overlay in the bottom-left corner of the screen
+    
+    When chests spawn, you should see the tracker appear automatically.
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Mod doesn't load">
+    **Symptoms**: No SpawnLogger messages in the log file
+    
+    **Solutions**:
+    - Verify you're using BepInEx 6.x IL2CPP (not the Mono version)
+    - Ensure `SpawnLogger.dll` is in the correct `plugins` folder
+    - Check that BepInEx itself is loading (you should see BepInEx messages in the log)
+    - Try running the game as administrator
+  </Accordion>
+
+  <Accordion title="Overlay doesn't appear">
+    **Symptoms**: Mod loads but no overlay is visible
+    
+    **Solutions**:
+    - Make sure you're in an active round (not in menus)
+    - Wait for chests to spawn - the overlay appears when chests are detected
+    - Check the log file for any error messages related to overlay creation
+    - Verify your game resolution isn't conflicting with the overlay position
+  </Accordion>
+
+  <Accordion title="Counters show incorrect values">
+    **Symptoms**: Numbers don't match what you see in-game
+    
+    **Solutions**:
+    - The mod resets between rounds - ensure you're checking during active gameplay
+    - Some objects may spawn outside your view but still be counted
+    - Check the console/log for tracking messages to see what's being detected
+    - Try starting a fresh round to reset all counters
+  </Accordion>
+
+  <Accordion title="Game crashes on startup">
+    **Symptoms**: MegaBonk crashes when loading mods
+    
+    **Solutions**:
+    - Ensure all dependencies are installed (BepInEx, Harmony)
+    - Check for conflicts with other mods in the `plugins` folder
+    - Review the `LogOutput.log` file for specific error messages
+    - Try removing other mods temporarily to isolate the issue
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+If you encounter persistent issues, check the BepInEx log file at `BepInEx/LogOutput.log` for detailed error messages. The log will show exactly what went wrong during mod initialization.
+</Warning>
+
+## Next steps
+
+Now that SpawnLogger is installed, head to the [quickstart guide](/quickstart) to learn how to use the overlay and understand what each counter represents.

@@ -1,0 +1,154 @@
+---
+title: Architecture
+description: Learn how SpawnTracker is structured and how its components work together
+---
+
+SpawnTracker is built using a modular architecture that separates concerns between tracking, patching, and UI rendering.
+
+## Core components
+
+The mod consists of these key architectural pieces:
+
+### Plugin class
+
+The entry point for the BepInEx mod loader. Located at `Plugin.cs:12-33`.
+
+```csharp
+[BepInPlugin(GUID, MODNAME, VERSION)]
+public class Plugin : BasePlugin
+{
+    public const string
+        MODNAME = "SpawnLogger",
+        AUTHOR = "Antiparty",
+        GUID = AUTHOR + "_" + MODNAME,
+        VERSION = "0.5.3";
+
+    public override void Load()
+    {
+        log.LogInfo($"Loading {MODNAME} v{VERSION} by {AUTHOR}");
+        var harmony = new Harmony(GUID);
+        harmony.PatchAll();
+        log.LogInfo($"{MODNAME} loaded successfully!");
+    }
+
+    public static ManualLogSource log;
+    public static bool disableTracker;
+}
+```
+
+The `Load()` method creates a Harmony instance and automatically patches all classes marked with `[HarmonyPatch]` attributes.
+
+### Static tracker pattern
+
+All game object tracking uses static classes for simplicity and global access:
+
+- **ChestTracker** (`Plugin.cs:99-109`) - Tracks total and unopened chests
+- **ShadyGuyTracker** (`Plugin.cs:112-124`) - Tracks ShadyGuy spawns, interactions, and disappearances
+- **ChargeShrineTracker** (`Plugin.cs:127-139`) - Tracks charge shrine states and completion
+- **MoaiTracker** (`Plugin.cs:141-151`) - Tracks Moai shrine spawns and interactions
+
+Each tracker exposes public static fields and a `Reset()` method:
+
+```csharp
+public static class ChestTracker
+{
+    public static int totalChests = 0;
+    public static int unopenedChests = 0;
+
+    public static void Reset()
+    {
+        totalChests = 0;
+        unopenedChests = 0;
+    }
+}
+```
+
+### OverlayManager
+
+Manages the lifetime of the on-screen GUI overlay (`Plugin.cs:37-95`).
+
+**Key responsibilities:**
+- Creates and manages the overlay GameObject
+- Persists across scene loads using `DontDestroyOnLoad`
+- Provides cleanup methods for round transitions
+- Coordinates tracker resets
+
+```csharp
+public static class OverlayManager
+{
+    public static GameObject overlayObject;
+
+    public static void CreateOverlay()
+    public static void HideOverlay()
+    public static void DestroyOverlay()
+    public static void SafeCleanup()
+}
+```
+
+### ChestOverlay component
+
+A Unity MonoBehaviour that renders the GUI overlay (`Plugin.cs:154-240`).
+
+**Features:**
+- Immediate mode GUI (OnGUI) rendering
+- Semi-transparent background box
+- Text shadows for readability
+- Positioned at bottom-left of screen
+- Displays all tracker values in real-time
+
+## Harmony patching strategy
+
+SpawnTracker uses **Postfix patches** exclusively to observe game events without modifying behavior:
+
+- **Spawn detection**: Patches `SpawnInteractables` methods to count spawned objects
+- **Interaction tracking**: Patches `Interact()` methods on interactable types
+- **State changes**: Patches shrine `Complete()` and ShadyGuy `Disappear()` methods
+- **Round lifecycle**: Patches `GameManager` methods for round start/end detection
+
+All patches check the `Plugin.disableTracker` flag to prevent tracking outside of active rounds.
+
+## Data flow
+
+1. **Game initialization**: BepInEx loads the Plugin, which applies Harmony patches
+2. **Round start**: `GameManager` patches detect round start and enable tracking
+3. **Object spawn**: Spawn patches increment tracker totals
+4. **Player interaction**: Interaction patches update tracker state
+5. **UI update**: ChestOverlay reads tracker values each frame in `OnGUI()`
+6. **Round end**: Death/destroy patches disable tracking and reset counters
+
+## Component diagram
+
+```
+Plugin (BepInEx entry)
+  └─> Harmony.PatchAll()
+       ├─> SpawnInteractablesPatches → ChestTracker
+       ├─> TrackStatsPatches → ChestTracker
+       ├─> ShadyGuyPatches → ShadyGuyTracker
+       ├─> ChargeShrinePatches → ChargeShrineTracker
+       ├─> MoaiPatches → MoaiTracker
+       └─> GameManagerPatches → disableTracker flag
+
+OverlayManager
+  └─> ChestOverlay (MonoBehaviour)
+       └─> OnGUI() reads all trackers
+```
+
+## Threading and lifecycle
+
+All tracking happens on Unity's main thread. The mod uses:
+
+- **Static state**: All trackers are static classes (no instances)
+- **Scene persistence**: Overlay uses `DontDestroyOnLoad` to survive scene changes
+- **Cleanup hooks**: `OnDisable` and `OnDestroy` call `SafeCleanup()` to prevent leaks
+- **Round isolation**: Tracking is disabled between rounds via `disableTracker` flag
+
+## Extension points
+
+To add tracking for new object types:
+
+1. Create a new static tracker class following the existing pattern
+2. Add Harmony patches for spawn and interaction events
+3. Update `ChestOverlay.OnGUI()` to display the new tracker
+4. Add `Reset()` call to `OverlayManager.SafeCleanup()`
+
+See [Harmony patches](/development/harmony-patches) for detailed patching examples.

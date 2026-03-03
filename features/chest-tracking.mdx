@@ -1,0 +1,124 @@
+---
+title: Chest tracking
+description: Track spawned chests and monitor which ones remain unopened during your MegaBonk run
+---
+
+The chest tracking system monitors all chests spawned in each level and decrements the counter when players open them.
+
+## ChestTracker class
+
+The `ChestTracker` maintains two counters:
+
+```csharp
+public static class ChestTracker
+{
+    public static int totalChests = 0;
+    public static int unopenedChests = 0;
+
+    public static void Reset()
+    {
+        totalChests = 0;
+        unopenedChests = 0;
+    }
+}
+```
+
+<Info>
+  Both `totalChests` and `unopenedChests` are incremented together when chests spawn, then `unopenedChests` decrements as players open them.
+</Info>
+
+## Counting spawned chests
+
+The `SpawnChests` method is patched to detect when the game spawns chests:
+
+```csharp
+[HarmonyPostfix]
+[HarmonyPatch("SpawnChests")]
+public static void Postfix_SpawnChests(SpawnInteractables __instance)
+{
+    if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) return;
+
+    ChestTracker.totalChests += __instance.numChests;
+    ChestTracker.unopenedChests += __instance.numChests;
+    Plugin.log.LogInfo($"[SpawnLogger] Chests spawned: {__instance.numChests}");
+
+    // Spawn overlay once
+    if (!overlaySpawned || GameObject.FindObjectOfType<ChestOverlay>() == null)
+    {
+        overlaySpawned = true;
+        ClassInjector.RegisterTypeInIl2Cpp<ChestOverlay>();
+        var go = new GameObject("ChestOverlay");
+        Object.DontDestroyOnLoad(go);
+        go.AddComponent<ChestOverlay>();
+        Plugin.log.LogInfo("[SpawnLogger] Chest overlay GUI spawned.");
+    }
+}
+```
+
+### Key implementation details
+
+<Accordion title="Round state check">
+  The patch first verifies that tracking is enabled by checking `Plugin.disableTracker` and `ChargeShrineTracker.IsRoundActive`. This prevents counting chests outside of active rounds.
+</Accordion>
+
+<Accordion title="Accessing spawn count">
+  The `__instance` parameter provides access to the original `SpawnInteractables` object, allowing the patch to read `numChests` directly from the game's spawn system.
+</Accordion>
+
+<Accordion title="Overlay initialization">
+  This patch also triggers overlay creation when the first chests spawn, ensuring the GUI is ready to display tracking information.
+</Accordion>
+
+## Tracking opened chests
+
+When a player opens a chest, the game calls `TrackStats.OnChestOpened()`. The patch decrements the unopened counter:
+
+```csharp
+[HarmonyPatch(typeof(TrackStats))]
+public static class TrackStatsPatches
+{
+    [HarmonyPostfix]
+    [HarmonyPatch(nameof(TrackStats.OnChestOpened))]
+    public static void Postfix_OnChestOpened()
+    {
+        if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) return;
+
+        ChestTracker.unopenedChests = Mathf.Max(0, ChestTracker.unopenedChests - 1);
+        Plugin.log.LogInfo($"[ChestTracker] Chest opened! Remaining unopened: {ChestTracker.unopenedChests}");
+    }
+}
+```
+
+<Note>
+  The `Mathf.Max(0, ...)` ensures the unopened count never goes negative, even if there are edge cases or timing issues.
+</Note>
+
+## Usage example
+
+During a typical round:
+
+1. Level loads and spawns 5 chests
+2. `totalChests` = 5, `unopenedChests` = 5
+3. Player opens first chest
+4. `totalChests` = 5, `unopenedChests` = 4
+5. Player opens two more chests
+6. `totalChests` = 5, `unopenedChests` = 2
+
+The overlay displays: `Chests: 2/5`
+
+## Reset behavior
+
+Chest counts are reset when:
+
+- A new round starts (via `GameManager.StartPlaying`, `TryInit`, or `CreateInstances`)
+- The player dies (`GameManager.OnDied`)
+- The game manager is destroyed (`GameManager.OnDestroy`)
+
+```csharp
+private static void ResetAllTrackers()
+{
+    ChestTracker.Reset();
+    ShadyGuyTracker.Reset();
+    ChargeShrineTracker.Reset();
+}
+```

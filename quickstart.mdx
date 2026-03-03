@@ -1,80 +1,238 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get started with SpawnLogger and learn to use the tracking overlay
 ---
 
-## Get started in three steps
+## Your first tracked run
 
-Get your documentation site running locally and make your first customization.
+This guide will walk you through using SpawnLogger for the first time, from launching the game to understanding every counter on the overlay.
 
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+<Steps>
+  <Step title="Launch MegaBonk">
+    Start the game normally. SpawnLogger loads automatically with BepInEx.
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+    You should see initialization messages in the console (if enabled):
+    ```
+    [Info   : SpawnLogger] Loading SpawnLogger v0.5.3 by Antiparty
+    [Info   : SpawnLogger] SpawnLogger loaded successfully!
+    ```
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    <Note>
+    The overlay won't appear in menus - it only activates during active rounds when objects spawn.
+    </Note>
+  </Step>
 
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+  <Step title="Start a round">
+    Begin a new game or continue an existing save. Once you start playing:
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
+    - SpawnLogger enables tracking when the round begins
+    - Hooks activate to monitor spawn events
+    - Counters reset to prepare for the new round
+    
+    The mod monitors `GameManager.StartPlaying()`, `TryInit()`, and `CreateInstances()` to detect round starts.
+  </Step>
+
+  <Step title="Wait for spawns">
+    As you play, objects will spawn in the level:
+    
+    - **Chests** typically spawn early when `SpawnInteractables.SpawnChests()` runs
+    - **ShadyGuys** may appear as you explore
+    - **Shrines** (Charge and Moai types) spawn with the level
+    
+    When the first chests spawn, the overlay automatically appears in the **bottom-left corner** of your screen.
+    
+    <Note>
+    If nothing has spawned yet, the overlay will show "Waiting for spawns..." to confirm it's active.
+    </Note>
+  </Step>
+
+  <Step title="Read the overlay">
+    The overlay displays four tracking lines with real-time counters:
+    
+    ```
+    Chests: 2/5
+    ShadyGuys: 1/3  
+    Shrines: 1/2
+    Moai: 0/1
+    ```
+    
+    Each line follows the format: `Object: Remaining/Total` or `Object: Completed/Total`
+  </Step>
+</Steps>
+
+## Understanding the counters
+
+### Chests: X/Y
+
+Tracks chest availability:
+- **X** = Unopened chests remaining
+- **Y** = Total chests spawned this round
+
+**Example**: `Chests: 3/5` means 5 chests spawned and 3 are still unopened.
+
+<Accordion title="How chest tracking works">
+  - Increments when `SpawnInteractables.SpawnChests()` runs
+  - Decrements when `TrackStats.OnChestOpened()` fires
+  - Resets to 0/0 at the end of each round
+  
+  ```csharp
+  // From Plugin.cs:292-294
+  ChestTracker.totalChests += __instance.numChests;
+  ChestTracker.unopenedChests += __instance.numChests;
+  ```
 </Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+### ShadyGuys: X/Y
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+Monitors ShadyGuy NPCs:
+- **X** = Number of ShadyGuys that disappeared (without interaction)
+- **Y** = Total ShadyGuys spawned
 
-### Step 3: Go live
+**Example**: `ShadyGuys: 1/3` means 3 ShadyGuys appeared and 1 has already disappeared.
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
+<Warning>
+ShadyGuys can disappear if you don't interact with them quickly enough. Use this counter to track how many you've missed.
+</Warning>
+
+<Accordion title="How ShadyGuy tracking works">
+  - Increments total when `InteractableShadyGuy.Start()` runs
+  - Tracks interactions via `InteractableShadyGuy.Interact()`
+  - Counts disappeared via `InteractableShadyGuy.Disappear()`
+  
+  ```csharp
+  // From Plugin.cs:350-351
+  ShadyGuyTracker.total++;
+  Plugin.log.LogInfo($"[ShadyGuy] Spawned new ShadyGuy (Total: {ShadyGuyTracker.total})");
+  ```
 </Accordion>
 
-## Next steps
+### Shrines: X/Y
 
-Now that you have your docs running, explore these key features:
+Tracks Charge Shrine status:
+- **X** = Active shrines (not yet completed)
+- **Y** = Total shrines spawned
 
-<CardGroup cols={2}>
+**Example**: `Shrines: 2/4` means 4 shrines spawned and 2 are still waiting to be completed.
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+<Accordion title="How shrine tracking works">
+  - Increments when `ChargeShrine.Start()` runs
+  - Decrements when `ChargeShrine.Complete()` fires
+  - Both counters reset at round end
+  
+  ```csharp
+  // From Plugin.cs:388-390
+  ChargeShrineTracker.ActiveShrineCount++;
+  ChargeShrineTracker.total++;
+  ```
+</Accordion>
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+### Moai: X/Y
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+Monitors Moai Shrine interactions:
+- **X** = Moai shrines interacted with
+- **Y** = Total Moai shrines spawned
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+**Example**: `Moai: 1/2` means 2 Moai shrines exist and you've used 1.
 
-</CardGroup>
+<Accordion title="How Moai tracking works">
+  - Increments total when `SpawnInteractables.SpawnShrines()` creates Moai
+  - Tracks interactions via `InteractableShrineMoai.Interact()`
+  - Only counts successful interactions (when `__result` is true)
+  
+  ```csharp
+  // From Plugin.cs:254-255  
+  MoaiTracker.interacted++;
+  Plugin.log.LogInfo($"[Moai] Interacted with Moai Shrine! ({MoaiTracker.interacted}/{MoaiTracker.total})");
+  ```
+</Accordion>
+
+## Tracking behavior
+
+### Round lifecycle
+
+SpawnLogger automatically manages tracking based on round state:
+
+<Steps>
+  <Step title="Round start">
+    When a round begins via `GameManager.StartPlaying()`, `TryInit()`, or `CreateInstances()`:
+    - All counters reset to zero
+    - Tracking is enabled (`Plugin.disableTracker = false`)
+    - Round state is marked active (`ChargeShrineTracker.IsRoundActive = true`)
+  </Step>
+
+  <Step title="Active gameplay">
+    During the round:
+    - Spawns are detected and counted in real-time
+    - Interactions update counters immediately
+    - The overlay updates automatically with each change
+  </Step>
+
+  <Step title="Round end">
+    When you die (`GameManager.OnDied()`) or the GameManager is destroyed:
+    - Tracking disables (`Plugin.disableTracker = true`)
+    - All counters reset to zero
+    - The overlay hides but persists for the next round
+  </Step>
+
+  <Step title="Stage transitions">
+    When moving to a new stage via portal (`SpawnPlayerPortal.StartPortal()`):
+    - Tracking re-enables for the new stage
+    - Round state updates to active
+    - Previous stage counters are maintained until round end
+  </Step>
+</Steps>
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+The overlay persists across stage transitions using Unity's `DontDestroyOnLoad()`, so you'll keep seeing your tracking data even when loading new areas.
+</Note>
+
+## Console logging
+
+For detailed debugging or verification, SpawnLogger writes comprehensive logs:
+
+```
+[SpawnLogger] Chests spawned: 5
+[ChestTracker] Chest opened! Remaining unopened: 4
+[ShadyGuy] Spawned new ShadyGuy (Total: 2)
+[ShadyGuy] Interacted with ShadyGuy! (1/2)
+[ShrineTracker] A Charge Shrine was counted! Total Shrines: 3
+[Moai] Spawned a Moai Shrine! (Total: 1)
+```
+
+These messages appear in:
+- The BepInEx console window (if enabled)
+- `BepInEx/LogOutput.log` file
+
+<Tip>
+Enable the console window in BepInEx settings to see real-time tracking events as you play.
+</Tip>
+
+## Tips for effective tracking
+
+<CardGroup cols={2}>
+  <Card title="Check regularly" icon="eye">
+    Glance at the overlay periodically to ensure you haven't missed any chests or shrines before advancing.
+  </Card>
+  <Card title="Watch ShadyGuys" icon="clock">
+    The disappeared counter helps you see how many ShadyGuys you missed - try to interact before they vanish.
+  </Card>
+  <Card title="Complete shrines" icon="check">
+    Active shrine count shows incomplete shrines - useful for completionists who want to finish everything.
+  </Card>
+  <Card title="Track efficiency" icon="chart-line">
+    Compare opened vs total chests to measure your exploration thoroughness across runs.
+  </Card>
+</CardGroup>
+
+## What's next?
+
+You're now tracking all spawned objects in MegaBonk! The overlay will continue working automatically across all your runs.
+
+**Want more details?** Check out:
+- [Installation guide](/installation) for troubleshooting
+- [Introduction](/introduction) for technical details about how it works
+- The source code for customization options
+
+<Note>
+SpawnLogger is open source (v0.5.3 by Antiparty). The plugin GUID is `Antiparty_SpawnLogger` if you're configuring mod compatibility.
 </Note>

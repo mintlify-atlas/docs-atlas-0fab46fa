@@ -1,0 +1,381 @@
+---
+title: Harmony patches
+description: Understand how SpawnTracker uses Harmony to patch MegaBonk game methods
+---
+
+SpawnTracker uses [Harmony](https://github.com/pardeike/Harmony) to inject code into MegaBonk's game methods without modifying the original assemblies.
+
+## Patching methodology
+
+All patches in SpawnTracker follow these conventions:
+
+### Postfix-only pattern
+
+Every patch uses `[HarmonyPostfix]` to run **after** the original method completes. This ensures:
+- No interference with game logic
+- Safe to observe results and state changes
+- Compatible with other mods
+
+### Tracking guard
+
+Most patches check `Plugin.disableTracker` before recording events:
+
+```csharp
+if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive)
+    return;
+```
+
+This prevents tracking during menus, loading screens, and between rounds.
+
+### Logging pattern
+
+All patches log their actions using `Plugin.log.LogInfo()` for debugging.
+
+## Patch classes
+
+### SpawnInteractablesPatches
+
+Patches the `SpawnInteractables` class to detect when chests and shrines spawn.
+
+**File location**: `Plugin.cs:280-323`
+
+**Patched methods**:
+
+<CodeGroup>
+```csharp SpawnChests
+[HarmonyPostfix]
+[HarmonyPatch("SpawnChests")]
+public static void Postfix_SpawnChests(SpawnInteractables __instance)
+{
+    if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) return;
+
+    ChestTracker.totalChests += __instance.numChests;
+    ChestTracker.unopenedChests += __instance.numChests;
+    Plugin.log.LogInfo($"[SpawnLogger] Chests spawned: {__instance.numChests}");
+
+    // Spawn overlay once
+    if (!overlaySpawned || GameObject.FindObjectOfType<ChestOverlay>() == null)
+    {
+        overlaySpawned = true;
+        ClassInjector.RegisterTypeInIl2Cpp<ChestOverlay>();
+        var go = new GameObject("ChestOverlay");
+        Object.DontDestroyOnLoad(go);
+        go.AddComponent<ChestOverlay>();
+    }
+}
+```
+
+```csharp SpawnShrines
+[HarmonyPostfix]
+[HarmonyPatch("SpawnShrines")]
+public static void Postfix_SpawnShrines(SpawnInteractables __instance)
+{
+    if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) return;
+    Plugin.log.LogInfo($"[SpawnLogger] Shrines spawned: {__instance.numShrines}");
+}
+```
+</CodeGroup>
+
+The `SpawnChests` patch also handles creating the overlay GameObject on first chest spawn.
+
+### TrackStatsPatches
+
+Patches the game's stats tracking to detect chest opens.
+
+**File location**: `Plugin.cs:326-338`
+
+```csharp
+[HarmonyPatch(typeof(TrackStats))]
+public static class TrackStatsPatches
+{
+    [HarmonyPostfix]
+    [HarmonyPatch(nameof(TrackStats.OnChestOpened))]
+    public static void Postfix_OnChestOpened()
+    {
+        if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) return;
+
+        ChestTracker.unopenedChests = Mathf.Max(0, ChestTracker.unopenedChests - 1);
+        Plugin.log.LogInfo($"[ChestTracker] Chest opened! Remaining unopened: {ChestTracker.unopenedChests}");
+    }
+}
+```
+
+Uses `Mathf.Max()` to prevent negative counts from edge cases.
+
+### ShadyGuyPatches
+
+Patches `InteractableShadyGuy` to track mysterious NPC spawns and interactions.
+
+**File location**: `Plugin.cs:341-372`
+
+<CodeGroup>
+```csharp Start (Spawn)
+[HarmonyPostfix]
+[HarmonyPatch("Start")]
+public static void Postfix_Start(InteractableShadyGuy __instance)
+{
+    if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) return;
+
+    ShadyGuyTracker.total++;
+    Plugin.log.LogInfo($"[ShadyGuy] Spawned new ShadyGuy (Total: {ShadyGuyTracker.total})");
+}
+```
+
+```csharp Interact
+[HarmonyPostfix]
+[HarmonyPatch("Interact")]
+public static void Postfix_Interact(InteractableShadyGuy __instance, ref bool __result)
+{
+    if ((Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) || !__result) return;
+
+    ShadyGuyTracker.interacted++;
+    Plugin.log.LogInfo($"[ShadyGuy] Interacted with ShadyGuy! ({ShadyGuyTracker.interacted}/{ShadyGuyTracker.total})");
+}
+```
+
+```csharp Disappear
+[HarmonyPostfix]
+[HarmonyPatch("Disappear")]
+public static void Postfix_Disappear(InteractableShadyGuy __instance)
+{
+    if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) return;
+    Plugin.log.LogInfo($"[ShadyGuy] A ShadyGuy disappeared (Rarity: {__instance.rarity})");
+    ShadyGuyTracker.disappeared++;
+}
+```
+</CodeGroup>
+
+Note the `ref bool __result` parameter in `Interact` - this is a Harmony feature that lets patches access the return value.
+
+### ChargeShrineStartPatch
+
+Patches the private `ChargeShrine` class using runtime type lookup.
+
+**File location**: `Plugin.cs:375-392`
+
+```csharp
+[HarmonyPatch]
+public static class ChargeShrineStartPatch
+{
+    private static System.Reflection.MethodBase TargetMethod()
+    {
+        System.Type type = AccessTools.TypeByName("ChargeShrine");
+        return AccessTools.Method(type, "Start", null, null);
+    }
+
+    private static void Postfix()
+    {
+        if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) return;
+
+        ChargeShrineTracker.ActiveShrineCount++;
+        ChargeShrineTracker.total++;
+        Plugin.log.LogInfo($"[ShrineTracker] A Charge Shrine was counted! Total Shrines: {ChargeShrineTracker.ActiveShrineCount}");
+    }
+}
+```
+
+This uses the **manual patching** pattern with `TargetMethod()` to patch classes that aren't public or aren't in referenced assemblies.
+
+### ChargeShrineCompletePatch
+
+Detects when a charge shrine is completed.
+
+**File location**: `Plugin.cs:394-410`
+
+```csharp
+[HarmonyPatch]
+public static class ChargeShrineCompletePatch
+{
+    private static System.Reflection.MethodBase TargetMethod()
+    {
+        System.Type type = AccessTools.TypeByName("ChargeShrine");
+        return AccessTools.Method(type, "Complete", null, null);
+    }
+
+    private static void Postfix()
+    {
+        if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) return;
+
+        ChargeShrineTracker.ActiveShrineCount = Mathf.Max(0, ChargeShrineTracker.ActiveShrineCount - 1);
+        Plugin.log.LogInfo($"[ShrineTracker] A Charge Shrine was completed! Remaining: {ChargeShrineTracker.ActiveShrineCount}");
+    }
+}
+```
+
+### MoaiPatches
+
+Patches `InteractableShineMoai` for Moai shrine interactions.
+
+**File location**: `Plugin.cs:242-277`
+
+```csharp
+[HarmonyPatch(typeof(InteractableShrineMoai))]
+public static class MoaiPatches
+{
+    [HarmonyPostfix]
+    [HarmonyPatch(nameof(InteractableShrineMoai.Interact))]
+    public static void Postfix_Interact(InteractableShrineMoai __instance, ref bool __result)
+    {
+        if ((Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) || !__result)
+            return;
+
+        MoaiTracker.interacted++;
+        Plugin.log.LogInfo($"[Moai] Interacted with Moai Shrine! ({MoaiTracker.interacted}/{MoaiTracker.total})");
+    }
+}
+```
+
+The spawn counting is handled by `MoaiSpawnPatch` which patches `SpawnInteractables.SpawnShrines`.
+
+### GameManagerPatches
+
+Patches `GameManager` to detect round start events.
+
+**File location**: `Plugin.cs:413-466`
+
+```csharp
+[HarmonyPatch(typeof(GameManager))]
+public static class GameManagerPatches
+{
+    public static bool roundStarted = false;
+
+    [HarmonyPostfix]
+    [HarmonyPatch("StartPlaying")]
+    public static void Postfix_StartPlaying()
+    {
+        if (!roundStarted)
+        {
+            ResetAllTrackers();
+            Plugin.disableTracker = false;
+            ChargeShrineTracker.IsRoundActive = true;
+            roundStarted = true;
+            Plugin.log.LogInfo("[SpawnLogger] Round started via StartPlaying: Tracking enabled.");
+        }
+    }
+
+    // Also patches TryInit and CreateInstances
+
+    private static void ResetAllTrackers()
+    {
+        ChestTracker.Reset();
+        ShadyGuyTracker.Reset();
+        ChargeShrineTracker.Reset();
+    }
+}
+```
+
+Also patches:
+- `GameManager.OnDied` - Disables tracking and resets on death
+- `GameManager.OnDestroy` - Cleanup when GameManager is destroyed
+
+### SpawnPlayerPortal_StartPortal
+
+Patches portal spawning to detect stage transitions.
+
+**File location**: `Plugin.cs:498-519`
+
+```csharp
+[HarmonyPatch]
+public static class SpawnPlayerPortal_StartPortal
+{
+    private static System.Reflection.MethodBase TargetMethod()
+    {
+        System.Type type = AccessTools.TypeByName("SpawnPlayerPortal");
+        return AccessTools.Method(type, "StartPortal", null, null);
+    }
+
+    private static void Postfix()
+    {
+        ChargeShrineTracker.IsRoundActive = true;
+        Plugin.disableTracker = false;
+        GameManagerPatches.roundStarted = true;
+        Plugin.log.LogInfo("[SpawnLogger] Stage Start/Next Stage/Restart Stage: Shrines reset, tracking enabled.");
+    }
+}
+```
+
+## Adding new patches
+
+To patch a new game class:
+
+### 1. Public class with known methods
+
+Use declarative attributes:
+
+```csharp
+[HarmonyPatch(typeof(YourGameClass))]
+public static class YourGameClassPatches
+{
+    [HarmonyPostfix]
+    [HarmonyPatch(nameof(YourGameClass.MethodName))]
+    public static void Postfix_MethodName(YourGameClass __instance)
+    {
+        if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) return;
+        
+        // Your tracking logic
+        Plugin.log.LogInfo("[YourTracker] Something happened!");
+    }
+}
+```
+
+### 2. Private class or runtime-only types
+
+Use `TargetMethod()` pattern:
+
+```csharp
+[HarmonyPatch]
+public static class YourPatch
+{
+    private static System.Reflection.MethodBase TargetMethod()
+    {
+        System.Type type = AccessTools.TypeByName("YourClassName");
+        return AccessTools.Method(type, "MethodName", null, null);
+    }
+
+    private static void Postfix()
+    {
+        // Your tracking logic
+    }
+}
+```
+
+### 3. Accessing parameters and return values
+
+Harmony provides special parameter names:
+
+- `__instance` - The instance being patched (`this`)
+- `__result` - The return value (use `ref` to modify)
+- Named parameters - Match the original method's parameter names
+
+```csharp
+public static void Postfix_Example(
+    YourClass __instance,     // The instance
+    ref bool __result,        // The return value
+    int parameterName         // Original method parameter
+)
+{
+    if (!__result) return;    // Only track if method returned true
+    Plugin.log.LogInfo($"Instance field: {__instance.someField}");
+}
+```
+
+## Best practices
+
+- **Always use Postfix** unless you need to prevent execution (Prefix) or modify results
+- **Check tracking flags** to respect round lifecycle
+- **Validate return values** when patching methods that can fail
+- **Log all events** for debugging and verification
+- **Use Mathf.Max()** when decrementing counters to prevent negatives
+- **Test with multiple mods** to ensure compatibility
+
+## Debugging patches
+
+If a patch isn't working:
+
+1. Check BepInEx console output for Harmony errors
+2. Verify the target method name and signature
+3. Use `Plugin.log.LogInfo()` to confirm patch execution
+4. For IL2CPP games, ensure types are registered with `ClassInjector`
+5. Check that `harmony.PatchAll()` is called in `Plugin.Load()`
+
+See [Harmony documentation](https://harmony.pardeike.net/) for advanced patching techniques.

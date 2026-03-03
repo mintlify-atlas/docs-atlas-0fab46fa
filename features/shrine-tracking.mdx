@@ -1,0 +1,164 @@
+---
+title: Shrine tracking
+description: Monitor charge shrine spawns, track active shrines, and count completed shrines
+---
+
+The shrine tracking system monitors charge shrines throughout each level, tracking both how many are active and how many have been completed.
+
+## ChargeShrineTracker class
+
+The tracker maintains counts and round state:
+
+```csharp
+public static class ChargeShrineTracker
+{
+    public static int ActiveShrineCount = 0;
+    public static bool IsRoundActive = false;
+    public static int interacted = 0;
+    public static int total = 0;
+
+    public static void Reset()
+    {
+        ActiveShrineCount = 0;
+        interacted = 0;
+    }
+}
+```
+
+<Info>
+  `ActiveShrineCount` represents shrines that are spawned but not yet completed, while `total` tracks all shrines encountered in the round.
+</Info>
+
+## Counting spawned shrines
+
+The mod patches the `Start` method of the `ChargeShrine` class to detect when shrines spawn:
+
+```csharp
+[HarmonyPatch]
+public static class ChargeShrineStartPatch
+{
+    private static System.Reflection.MethodBase TargetMethod()
+    {
+        System.Type type = AccessTools.TypeByName("ChargeShrine");
+        return AccessTools.Method(type, "Start", null, null);
+    }
+
+    private static void Postfix()
+    {
+        if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) return;
+
+        ChargeShrineTracker.ActiveShrineCount++;
+        ChargeShrineTracker.total++;
+        Plugin.log.LogInfo($"[ShrineTracker] A Charge Shrine was counted! Total Shrines: {ChargeShrineTracker.ActiveShrineCount}");
+    }
+}
+```
+
+### Manual method resolution
+
+<Accordion title="Why use TargetMethod?">
+  The `ChargeShrine` class is internal or not directly accessible at compile time, so the patch uses `AccessTools.TypeByName` and `AccessTools.Method` to locate it dynamically at runtime.
+</Accordion>
+
+<Accordion title="Start method timing">
+  Unity's `Start()` method is called when a GameObject becomes active, making it the perfect place to count shrines as they spawn in the level.
+</Accordion>
+
+## Tracking completed shrines
+
+When a shrine is completed, the `Complete` method is called. The patch decrements the active count:
+
+```csharp
+[HarmonyPatch]
+public static class ChargeShrineCompletePatch
+{
+    private static System.Reflection.MethodBase TargetMethod()
+    {
+        System.Type type = AccessTools.TypeByName("ChargeShrine");
+        return AccessTools.Method(type, "Complete", null, null);
+    }
+
+    private static void Postfix()
+    {
+        if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) return;
+
+        ChargeShrineTracker.ActiveShrineCount = Mathf.Max(0, ChargeShrineTracker.ActiveShrineCount - 1);
+        Plugin.log.LogInfo($"[ShrineTracker] A Charge Shrine was completed! Remaining: {ChargeShrineTracker.ActiveShrineCount}");
+    }
+}
+```
+
+<Note>
+  The `Mathf.Max(0, ...)` prevents the active count from going negative if there are unexpected completion events.
+</Note>
+
+## Round state management
+
+The `IsRoundActive` flag is critical for shrine tracking:
+
+```csharp
+public static bool IsRoundActive = false;
+```
+
+This flag is set to `true` when a round starts:
+
+```csharp
+[HarmonyPostfix]
+[HarmonyPatch("StartPlaying")]
+public static void Postfix_StartPlaying()
+{
+    if (!roundStarted)
+    {
+        ResetAllTrackers();
+        Plugin.disableTracker = false;
+        ChargeShrineTracker.IsRoundActive = true;
+        roundStarted = true;
+        Plugin.log.LogInfo("[SpawnLogger] Round started via StartPlaying: Tracking enabled.");
+    }
+}
+```
+
+And set to `false` when the player dies:
+
+```csharp
+private static void Postfix()
+{
+    Plugin.disableTracker = true;
+    ChargeShrineTracker.IsRoundActive = false;
+    ChestTracker.Reset();
+    ShadyGuyTracker.Reset();
+    ChargeShrineTracker.Reset();
+
+    GameManagerPatches.roundStarted = false;
+    Plugin.log.LogInfo("[SpawnLogger] Player died: Tracking paused and counters reset.");
+}
+```
+
+## Usage example
+
+During a typical level:
+
+1. Level loads with 3 charge shrines
+2. `ActiveShrineCount` = 3, `total` = 3
+3. Player completes first shrine
+4. `ActiveShrineCount` = 2, `total` = 3
+5. Player completes second shrine
+6. `ActiveShrineCount` = 1, `total` = 3
+
+The overlay displays: `Shrines: 1/3`
+
+## Stage transitions
+
+When moving to a new stage, the tracker is reset while keeping `IsRoundActive` true:
+
+```csharp
+private static void Postfix()
+{
+    ChargeShrineTracker.IsRoundActive = true;
+    Plugin.disableTracker = false;
+    GameManagerPatches.roundStarted = true;
+    Plugin.log.LogInfo("[SpawnLogger] Stage Start/Next Stage/Restart Stage: Shrines reset, tracking enabled.");
+}
+```
+
+This ensures tracking continues seamlessly across multiple stages in the same run.

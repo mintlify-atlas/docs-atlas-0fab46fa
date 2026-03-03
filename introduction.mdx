@@ -1,0 +1,93 @@
+---
+title: Introduction
+description: Track spawned game objects in MegaBonk with a real-time on-screen overlay
+---
+
+## What is SpawnLogger?
+
+SpawnLogger is a BepInEx mod for MegaBonk that provides real-time tracking of spawned interactable objects during gameplay. Never miss a chest, shrine, or mysterious visitor again with an intuitive on-screen overlay that shows you exactly what's active in your current run.
+
+<CardGroup cols={3}>
+  <Card title="Installation" icon="download" href="/installation">
+    Get SpawnLogger installed and ready to use
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Start tracking spawns in minutes
+  </Card>
+  <Card title="Features" icon="sparkles" href="#key-features">
+    Explore what SpawnLogger can track
+  </Card>
+</CardGroup>
+
+## What does it track?
+
+SpawnLogger monitors four critical types of interactable objects that spawn during your MegaBonk runs:
+
+### Chests
+Tracks the total number of chests spawned and how many remain unopened. The counter automatically decrements as you open chests, helping you ensure you don't leave loot behind.
+
+### ShadyGuys
+Monitors mysterious ShadyGuy NPCs that appear during runs. See how many have spawned, how many you've interacted with, and how many have disappeared before you could reach them.
+
+### Charge shrines
+Keeps count of active Charge Shrines that need completing. The tracker updates in real-time as shrines are completed, showing you how many are still waiting.
+
+### Moai shrines
+Tracks the enigmatic Moai Shrines, displaying both the total spawned and how many you've successfully interacted with.
+
+## The overlay UI
+
+SpawnLogger displays a semi-transparent overlay in the bottom-left corner of your screen (positioned at 80% screen height). The overlay shows:
+
+```
+Chests: 2/5
+ShadyGuys: 1/3
+Shrines: 1/2
+Moai: 0/1
+```
+
+The overlay uses a bold, white font with subtle text shadows for excellent readability against any background. When no objects have spawned yet, it displays "Waiting for spawns..." to confirm the mod is active.
+
+<Note>
+The overlay automatically appears when chests spawn and persists across stage transitions using Unity's `DontDestroyOnLoad` functionality.
+</Note>
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Real-time tracking" icon="gauge">
+    Counters update instantly as you interact with objects or they despawn
+  </Card>
+  <Card title="Persistent overlay" icon="eye">
+    The UI persists across stage transitions and only resets between rounds
+  </Card>
+  <Card title="Round-aware" icon="rotate">
+    Automatically resets tracking when rounds end and re-enables when new rounds start
+  </Card>
+  <Card title="Performance optimized" icon="bolt">
+    Uses Harmony patches for efficient hooking with minimal game impact
+  </Card>
+</CardGroup>
+
+## How it works
+
+SpawnLogger uses [HarmonyX](https://github.com/BepInEx/HarmonyX) to patch into MegaBonk's game logic:
+
+- **Spawn detection**: Hooks into `SpawnInteractables.SpawnChests()`, `SpawnInteractables.SpawnShrines()`, and related methods
+- **Interaction tracking**: Patches `TrackStats.OnChestOpened()`, `InteractableShadyGuy.Interact()`, and shrine completion methods
+- **Round lifecycle**: Monitors `GameManager` methods like `StartPlaying()`, `OnDied()`, and `OnDestroy()` to reset counters appropriately
+
+<Warning>
+SpawnLogger disables tracking outside of active rounds to prevent incorrect counts. Tracking automatically re-enables when a new round starts.
+</Warning>
+
+## Version information
+
+- **Current version**: 0.5.3
+- **Author**: Antiparty
+- **Plugin GUID**: `Antiparty_SpawnLogger`
+- **BepInEx compatibility**: IL2CPP Unity builds
+
+## Ready to get started?
+
+Head over to the [installation guide](/installation) to set up SpawnLogger, or jump straight to the [quickstart](/quickstart) if you already have BepInEx configured.

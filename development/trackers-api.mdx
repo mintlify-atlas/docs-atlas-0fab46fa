@@ -1,0 +1,304 @@
+---
+title: Trackers API
+description: Reference documentation for SpawnTracker's public tracking and overlay APIs
+---
+
+SpawnTracker exposes several static classes that provide tracking data and UI management.
+
+## ChestTracker
+
+Tracks chest spawns and opens throughout the round.
+
+**Namespace**: `MEGABONK_SIMPLE_MOD`  
+**Location**: `Plugin.cs:99-109`
+
+### Fields
+
+<ParamField path="totalChests" type="int">
+  Total number of chests spawned in the current round. Incremented by `SpawnInteractablesPatches.Postfix_SpawnChests()`.
+</ParamField>
+
+<ParamField path="unopenedChests" type="int">
+  Number of chests that haven't been opened yet. Decremented by `TrackStatsPatches.Postfix_OnChestOpened()`.
+</ParamField>
+
+### Methods
+
+<ParamField path="Reset()" type="void">
+  Resets both `totalChests` and `unopenedChests` to 0. Called at the start of each round and when the player dies.
+</ParamField>
+
+### Example usage
+
+```csharp
+using MEGABONK_SIMPLE_MOD;
+
+// Check if all chests have been opened
+if (ChestTracker.unopenedChests == 0 && ChestTracker.totalChests > 0)
+{
+    Plugin.log.LogInfo("All chests opened!");
+}
+
+// Get completion percentage
+if (ChestTracker.totalChests > 0)
+{
+    float completion = 1.0f - ((float)ChestTracker.unopenedChests / ChestTracker.totalChests);
+    Plugin.log.LogInfo($"Chests: {completion * 100}% complete");
+}
+```
+
+## ShadyGuyTracker
+
+Tracks ShadyGuy NPC spawns, interactions, and disappearances.
+
+**Namespace**: `MEGABONK_SIMPLE_MOD`  
+**Location**: `Plugin.cs:112-124`
+
+### Fields
+
+<ParamField path="total" type="int">
+  Total number of ShadyGuys spawned. Incremented when `InteractableShadyGuy.Start()` is called.
+</ParamField>
+
+<ParamField path="interacted" type="int">
+  Number of ShadyGuys the player has successfully interacted with. Incremented by `ShadyGuyPatches.Postfix_Interact()`.
+</ParamField>
+
+<ParamField path="disappeared" type="int">
+  Number of ShadyGuys that have disappeared (timed out). Incremented by `ShadyGuyPatches.Postfix_Disappear()`.
+</ParamField>
+
+### Methods
+
+<ParamField path="Reset()" type="void">
+  Resets `total`, `interacted`, and `disappeared` to 0.
+</ParamField>
+
+### Example usage
+
+```csharp
+// Check if any ShadyGuys were missed
+int missed = ShadyGuyTracker.disappeared;
+int found = ShadyGuyTracker.interacted;
+Plugin.log.LogInfo($"Found {found}, missed {missed} ShadyGuys");
+
+// Alert if a ShadyGuy is still active
+int active = ShadyGuyTracker.total - ShadyGuyTracker.interacted - ShadyGuyTracker.disappeared;
+if (active > 0)
+{
+    Plugin.log.LogInfo($"{active} ShadyGuys still active!");
+}
+```
+
+## ChargeShrineTracker
+
+Tracks charge shrine spawns and completion states.
+
+**Namespace**: `MEGABONK_SIMPLE_MOD`  
+**Location**: `Plugin.cs:127-139`
+
+### Fields
+
+<ParamField path="ActiveShrineCount" type="int">
+  Number of charge shrines currently active (not yet completed). Incremented on spawn, decremented on completion.
+</ParamField>
+
+<ParamField path="total" type="int">
+  Total number of charge shrines spawned this round. Incremented by `ChargeShrineStartPatch.Postfix()`.
+</ParamField>
+
+<ParamField path="interacted" type="int">
+  Number of shrines the player has interacted with (currently unused in main tracking).
+</ParamField>
+
+<ParamField path="IsRoundActive" type="bool">
+  Flag indicating whether a round is currently active. Used to control tracking during round transitions.
+</ParamField>
+
+### Methods
+
+<ParamField path="Reset()" type="void">
+  Resets `ActiveShrineCount` and `interacted` to 0. Note: Does NOT reset `total`.
+</ParamField>
+
+### Example usage
+
+```csharp
+// Check if all shrines are completed
+if (ChargeShrineTracker.ActiveShrineCount == 0 && ChargeShrineTracker.total > 0)
+{
+    Plugin.log.LogInfo("All charge shrines completed!");
+}
+
+// Monitor shrine completion progress
+int completed = ChargeShrineTracker.total - ChargeShrineTracker.ActiveShrineCount;
+Plugin.log.LogInfo($"Shrines: {completed}/{ChargeShrineTracker.total} completed");
+```
+
+## MoaiTracker
+
+Tracks Moai shrine spawns and interactions.
+
+**Namespace**: `MEGABONK_SIMPLE_MOD`  
+**Location**: `Plugin.cs:141-151`
+
+### Fields
+
+<ParamField path="total" type="int">
+  Total number of Moai shrines spawned. Incremented by `MoaiSpawnPatch.Postfix()`.
+</ParamField>
+
+<ParamField path="interacted" type="int">
+  Number of Moai shrines the player has interacted with. Incremented by `MoaiPatches.Postfix_Interact()`.
+</ParamField>
+
+### Methods
+
+<ParamField path="Reset()" type="void">
+  Resets both `total` and `interacted` to 0.
+</ParamField>
+
+### Example usage
+
+```csharp
+// Check interaction rate
+if (MoaiTracker.total > 0)
+{
+    float rate = (float)MoaiTracker.interacted / MoaiTracker.total;
+    Plugin.log.LogInfo($"Used {MoaiTracker.interacted}/{MoaiTracker.total} Moai shrines ({rate * 100}%)");
+}
+```
+
+## OverlayManager
+
+Manages the on-screen GUI overlay that displays tracker information.
+
+**Namespace**: `MEGABONK_SIMPLE_MOD`  
+**Location**: `Plugin.cs:37-95`
+
+### Fields
+
+<ParamField path="overlayObject" type="GameObject">
+  Reference to the overlay GameObject. Null when no overlay exists.
+</ParamField>
+
+### Methods
+
+<ParamField path="CreateOverlay()" type="void">
+  Creates the overlay GameObject and attaches the `ChestOverlay` component. If the overlay already exists, makes it visible. The overlay persists across scene loads via `DontDestroyOnLoad`.
+</ParamField>
+
+<ParamField path="HideOverlay()" type="void">
+  Hides the overlay by setting `overlayObject.SetActive(false)`. Does not destroy the GameObject, allowing it to be shown again later.
+</ParamField>
+
+<ParamField path="DestroyOverlay()" type="void">
+  Immediately destroys the overlay GameObject and sets `overlayObject` to null.
+</ParamField>
+
+<ParamField path="SafeCleanup()" type="void">
+  Performs safe cleanup of all tracking state:
+  - Hides the overlay (doesn't destroy it)
+  - Resets all tracker classes
+  - Sets `Plugin.disableTracker = true`
+  - Sets `ChargeShrineTracker.IsRoundActive = false`
+  - Resets `GameManagerPatches.roundStarted = false`
+  
+  Wrapped in try-catch to prevent errors during cleanup.
+</ParamField>
+
+### Example usage
+
+```csharp
+// Manually create overlay
+OverlayManager.CreateOverlay();
+
+// Temporarily hide overlay
+OverlayManager.HideOverlay();
+DoSomethingWithoutOverlay();
+OverlayManager.CreateOverlay(); // Show it again
+
+// Full cleanup (typically called on round end)
+OverlayManager.SafeCleanup();
+```
+
+### Implementation details
+
+The `CreateOverlay()` method registers the `ChestOverlay` type with IL2CPP:
+
+```csharp Plugin.cs:41-55
+public static void CreateOverlay()
+{
+    if (overlayObject != null)
+    {
+        overlayObject.SetActive(true);
+        return;
+    }
+
+    ClassInjector.RegisterTypeInIl2Cpp<ChestOverlay>();
+    overlayObject = new GameObject("ChestOverlay");
+    UnityEngine.Object.DontDestroyOnLoad(overlayObject);
+    overlayObject.AddComponent<ChestOverlay>();
+    Plugin.log.LogInfo("[OverlayManager] Created overlay GUI");
+}
+```
+
+The `SafeCleanup()` method is designed to never throw exceptions:
+
+```csharp Plugin.cs:73-94
+public static void SafeCleanup()
+{
+    try
+    {
+        HideOverlay();
+
+        ChestTracker.Reset();
+        ShadyGuyTracker.Reset();
+        ChargeShrineTracker.Reset();
+        MoaiTracker.Reset();
+
+        Plugin.disableTracker = true;
+        ChargeShrineTracker.IsRoundActive = false;
+        GameManagerPatches.roundStarted = false;
+
+        Plugin.log.LogInfo("[OverlayManager] All trackers reset and overlay hidden.");
+    }
+    catch (System.Exception ex)
+    {
+        Plugin.log.LogError($"[OverlayManager] SafeCleanup failed: {ex}");
+    }
+}
+```
+
+## ChestOverlay
+
+Unity MonoBehaviour component that renders the GUI overlay.
+
+**Namespace**: `MEGABONK_SIMPLE_MOD`  
+**Location**: `Plugin.cs:154-240`
+
+### Rendering
+
+The overlay uses Unity's immediate mode GUI (IMGUI) system. It renders:
+
+- Semi-transparent black background box
+- White text with black shadow for readability
+- Positioned at bottom-left corner (10px from left, 80% down screen)
+- Size: 250x130 pixels
+
+### Displayed information
+
+```csharp Plugin.cs:175-178
+DrawShadowedLabel(new Rect(10, 8, 230, 25), $"Chests: {ChestTracker.unopenedChests}/{ChestTracker.totalChests}");
+DrawShadowedLabel(new Rect(10, 32, 230, 25), $"ShadyGuys: {ShadyGuyTracker.disappeared}/{ShadyGuyTracker.total}");
+DrawShadowedLabel(new Rect(10, 56, 230, 25), $"Shrines: {ChargeShrineTracker.ActiveShrineCount}/{ChargeShrineTracker.total}");
+DrawShadowedLabel(new Rect(10, 80, 230, 25), $"Moai: {MoaiTracker.interacted}/{MoaiTracker.total}");
+```
+
+### Lifecycle hooks
+
+Both `OnDisable()` and `OnDestroy()` call `OverlayManager.SafeCleanup()` to ensure proper cleanup.
+
+## Thread safety
+
+All tracker classes are static and accessed only from Unity's main thread. No thread synchronization is required as all Harmony patches execute on the main thread.

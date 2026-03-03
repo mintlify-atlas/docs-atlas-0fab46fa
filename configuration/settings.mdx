@@ -1,0 +1,144 @@
+---
+title: Configuration settings
+description: Configure SpawnTracker's tracking behavior and round state management
+---
+
+SpawnTracker provides configuration flags that control when tracking is active and how the mod responds to game state changes.
+
+## Tracking control flags
+
+### disableTracker flag
+
+The `disableTracker` flag controls whether tracking occurs outside of active rounds. When enabled, the mod ignores spawn and interaction events.
+
+```csharp
+public static bool disableTracker; // disables tracking outside of rounds
+```
+
+**Default behavior:**
+- Set to `true` when the player dies or the game ends
+- Set to `false` when a new round starts
+- Prevents counting spawns in menus or between rounds
+
+### IsRoundActive flag
+
+The `IsRoundActive` flag in `ChargeShrineTracker` indicates whether a gameplay round is currently active.
+
+```csharp
+public static bool IsRoundActive = false;
+```
+
+**State transitions:**
+- `true` when `GameManager.StartPlaying()`, `TryInit()`, or `CreateInstances()` is called
+- `false` when the player dies or the game is destroyed
+- Used in conjunction with `disableTracker` to determine tracking state
+
+## Round state management
+
+### When tracking is enabled
+
+Tracking activates when any of these game events occur:
+
+<CodeGroup>
+```csharp StartPlaying
+Plugin.disableTracker = false;
+ChargeShrineTracker.IsRoundActive = true;
+Plugin.log.LogInfo("[SpawnLogger] Round started via StartPlaying: Tracking enabled.");
+```
+
+```csharp TryInit
+Plugin.disableTracker = false;
+ChargeShrineTracker.IsRoundActive = true;
+Plugin.log.LogInfo("[SpawnLogger] Round started via TryInit: Tracking enabled.");
+```
+
+```csharp CreateInstances
+Plugin.disableTracker = false;
+ChargeShrineTracker.IsRoundActive = true;
+Plugin.log.LogInfo("[SpawnLogger] Round started via CreateInstances: Tracking enabled.");
+```
+</CodeGroup>
+
+### When tracking is disabled
+
+Tracking stops and all counters reset when:
+
+**Player death:**
+```csharp
+Plugin.disableTracker = true;
+ChargeShrineTracker.IsRoundActive = false;
+ChestTracker.Reset();
+ShadyGuyTracker.Reset();
+ChargeShrineTracker.Reset();
+Plugin.log.LogInfo("[SpawnLogger] Player died: Tracking paused and counters reset.");
+```
+
+**Game cleanup:**
+```csharp
+OverlayManager.SafeCleanup();
+Plugin.disableTracker = true;
+ChargeShrineTracker.IsRoundActive = false;
+GameManagerPatches.roundStarted = false;
+Plugin.log.LogInfo("[OverlayManager] All trackers reset and overlay hidden.");
+```
+
+## Tracking condition logic
+
+Most spawn and interaction patches use this conditional check:
+
+```csharp
+if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive)
+    return;
+```
+
+**How it works:**
+- Tracking proceeds if **either** flag allows it
+- `disableTracker = false` **OR** `IsRoundActive = true` enables tracking
+- Both must be blocking (`disableTracker = true` AND `IsRoundActive = false`) to prevent tracking
+
+<Note>
+This logic ensures tracking continues during stage transitions where one flag may temporarily be in a blocking state.
+</Note>
+
+## Stage transitions
+
+When entering a new stage or restarting:
+
+```csharp
+ChargeShrineTracker.IsRoundActive = true;
+Plugin.disableTracker = false;
+GameManagerPatches.roundStarted = true;
+Plugin.log.LogInfo("[SpawnLogger] Stage Start/Next Stage/Restart Stage: Shrines reset, tracking enabled.");
+```
+
+<Warning>
+Counter values are **not** preserved between stages. Each new stage starts with fresh counters.
+</Warning>
+
+## Counter reset behavior
+
+All trackers are reset to zero when:
+- A new round starts (via `ResetAllTrackers()`)
+- The player dies
+- The GameManager is destroyed
+- SafeCleanup is called
+
+**Reset implementation:**
+```csharp
+private static void ResetAllTrackers()
+{
+    ChestTracker.Reset();
+    ShadyGuyTracker.Reset();
+    ChargeShrineTracker.Reset();
+}
+```
+
+Each tracker's Reset method zeroes all counters:
+
+```csharp
+public static void Reset()
+{
+    totalChests = 0;
+    unopenedChests = 0;
+}
+```

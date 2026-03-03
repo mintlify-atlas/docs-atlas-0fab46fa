@@ -1,0 +1,147 @@
+---
+title: ShadyGuy tracking
+description: Track ShadyGuy spawns, player interactions, and disappearances throughout your run
+---
+
+The ShadyGuy tracking system monitors all ShadyGuy NPCs from spawn to disappearance, counting both successful interactions and missed opportunities.
+
+## ShadyGuyTracker class
+
+The tracker maintains three counters:
+
+```csharp
+public static class ShadyGuyTracker
+{
+    public static int total = 0;
+    public static int interacted = 0;
+    public static int disappeared = 0;
+
+    public static void Reset()
+    {
+        total = 0;
+        interacted = 0;
+        disappeared = 0;
+    }
+}
+```
+
+<Info>
+  - `total`: All ShadyGuys spawned in the current round
+  - `interacted`: ShadyGuys the player successfully interacted with
+  - `disappeared`: ShadyGuys that vanished before interaction
+</Info>
+
+## Tracking ShadyGuy spawns
+
+The mod patches the `Start` method to count ShadyGuys as they spawn:
+
+```csharp
+[HarmonyPatch(typeof(InteractableShadyGuy))]
+public static class ShadyGuyPatches
+{
+    [HarmonyPostfix]
+    [HarmonyPatch("Start")]
+    public static void Postfix_Start(InteractableShadyGuy __instance)
+    {
+        if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) return;
+
+        ShadyGuyTracker.total++;
+        Plugin.log.LogInfo($"[ShadyGuy] Spawned new ShadyGuy (Total: {ShadyGuyTracker.total})");
+    }
+```
+
+### Implementation details
+
+<Accordion title="Start method hook">
+  Unity's `Start()` is called when the ShadyGuy GameObject is activated, making it ideal for detecting new spawns before any player interaction.
+</Accordion>
+
+<Accordion title="Round state check">
+  Like other trackers, this patch verifies tracking is enabled before incrementing the counter to prevent false counts in menus or between rounds.
+</Accordion>
+
+## Tracking interactions
+
+When a player successfully interacts with a ShadyGuy, the counter is incremented:
+
+```csharp
+    [HarmonyPostfix]
+    [HarmonyPatch("Interact")]
+    public static void Postfix_Interact(InteractableShadyGuy __instance, ref bool __result)
+    {
+        if ((Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) || !__result) return;
+
+        ShadyGuyTracker.interacted++;
+        Plugin.log.LogInfo($"[ShadyGuy] Interacted with ShadyGuy! ({ShadyGuyTracker.interacted}/{ShadyGuyTracker.total})");
+    }
+```
+
+<Note>
+  The `__result` parameter contains the return value of the original `Interact()` method. The patch only counts interactions that returned `true`, meaning they were successful.
+</Note>
+
+### Return value checking
+
+<Accordion title="Why check __result?">
+  The `Interact()` method returns `bool` to indicate success. Checking `__result` ensures the counter only increments for valid interactions, not failed attempts or invalid states.
+</Accordion>
+
+## Tracking disappearances
+
+ShadyGuys can disappear if not interacted with in time:
+
+```csharp
+    [HarmonyPostfix]
+    [HarmonyPatch("Disappear")]
+    public static void Postfix_Disappear(InteractableShadyGuy __instance)
+    {
+        if (Plugin.disableTracker && !ChargeShrineTracker.IsRoundActive) return;
+        Plugin.log.LogInfo($"[ShadyGuy] A ShadyGuy disappeared (Rarity: {__instance.rarity})");
+        ShadyGuyTracker.disappeared++;
+    }
+}
+```
+
+<Info>
+  The disappearance counter helps players track missed opportunities. The patch also logs the rarity of the ShadyGuy that disappeared for debugging purposes.
+</Info>
+
+## Usage example
+
+During a typical run:
+
+1. First ShadyGuy spawns
+2. `total` = 1, `interacted` = 0, `disappeared` = 0
+3. Player interacts with it
+4. `total` = 1, `interacted` = 1, `disappeared` = 0
+5. Second ShadyGuy spawns
+6. `total` = 2, `interacted` = 1, `disappeared` = 0
+7. Second ShadyGuy disappears before interaction
+8. `total` = 2, `interacted` = 1, `disappeared` = 1
+
+The overlay displays: `ShadyGuys: 1/2`
+
+## Overlay display logic
+
+The overlay shows disappeared count out of total:
+
+```csharp
+DrawShadowedLabel(new Rect(10, 32, 230, 25), $"ShadyGuys: {ShadyGuyTracker.disappeared}/{ShadyGuyTracker.total}");
+```
+
+This format emphasizes how many ShadyGuys have vanished, helping players track their progress in finding them before they disappear.
+
+## Reset behavior
+
+ShadyGuy counters reset at the same times as other trackers:
+
+```csharp
+private static void ResetAllTrackers()
+{
+    ChestTracker.Reset();
+    ShadyGuyTracker.Reset();
+    ChargeShrineTracker.Reset();
+}
+```
+
+This ensures each new round starts with fresh counts.
