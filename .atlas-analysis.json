@@ -1,0 +1,71 @@
+{
+  "projectType": "general",
+  "projectName": "SpawnTracker",
+  "projectDescription": "A MegaBonk mod that tracks and displays spawned chests, shrines, and ShadyGuys with a real-time overlay.",
+  "theme": "aspen",
+  "primaryColor": "#FF6B35",
+  "lightColor": "#F7931E",
+  "darkColor": "#C1440E",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get Started",
+        "pages": [
+          "introduction",
+          "installation",
+          "quickstart"
+        ]
+      },
+      {
+        "group": "Features",
+        "pages": [
+          "features/overview",
+          "features/chest-tracking",
+          "features/shrine-tracking",
+          "features/shadyguy-tracking",
+          "features/moai-tracking",
+          "features/overlay-display"
+        ]
+      },
+      {
+        "group": "Configuration",
+        "pages": [
+          "configuration/settings",
+          "configuration/troubleshooting"
+        ]
+      },
+      {
+        "group": "Development",
+        "pages": [
+          "development/architecture",
+          "development/harmony-patches",
+          "development/trackers-api",
+          "development/contributing"
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Real-time chest tracking with opened/total counts",
+    "Shrine spawn and completion monitoring",
+    "ShadyGuy interaction and disappearance tracking",
+    "Moai shrine interaction tracking",
+    "Bottom-left overlay GUI with live statistics",
+    "Automatic round state management"
+  ],
+  "publicApiSurface": [
+    "ChestTracker.totalChests",
+    "ChestTracker.unopenedChests",
+    "ShadyGuyTracker.total",
+    "ShadyGuyTracker.interacted",
+    "ShadyGuyTracker.disappeared",
+    "ChargeShrineTracker.ActiveShrineCount",
+    "ChargeShrineTracker.total",
+    "MoaiTracker.total",
+    "MoaiTracker.interacted",
+    "OverlayManager.CreateOverlay()",
+    "OverlayManager.HideOverlay()",
+    "OverlayManager.DestroyOverlay()",
+    "ChestOverlay (MonoBehaviour component)"
+  ]
+}
